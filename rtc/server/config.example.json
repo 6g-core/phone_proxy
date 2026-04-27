@@ -1,0 +1,11 @@
+{
+  "signal_listen_host": "0.0.0.0",
+  "signal_listen_port": 18080,
+  "advertised_host": "192.168.1.83",
+  "udp_port_start": 40000,
+  "udp_port_end": 40031,
+  "ice_bind_host": "192.168.1.16",
+  "session_ttl_seconds": 300,
+  "ice_gather_timeout_ms": 8000,
+  "log_level": "INFO"
+}

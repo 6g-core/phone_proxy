@@ -1,0 +1,14 @@
+{
+  "udp_session_idle_timeout_seconds": 60,
+  "rules": [
+    {
+      "id": "demo-laptop-10001",
+      "name": "demo-laptop-10001",
+      "listen_ip": "192.168.1.83",
+      "listen_port": 10002,
+      "target_ip": "10.38.204.90",
+      "target_port": 10001,
+      "enabled": true
+    }
+  ]
+}
