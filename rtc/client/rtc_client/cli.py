@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 
 from .client import RtcClientApp
 from .config import ClientConfig
@@ -42,10 +43,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s [rtc-client] %(name)s %(message)s",
+    )
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     config = ClientConfig.load(args.config)
+    configure_logging(config.log_level)
     app = RtcClientApp(config)
 
     if args.command == "show-config":

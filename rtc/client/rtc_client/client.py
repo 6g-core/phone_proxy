@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ class ConnectResult:
 class RtcClientApp:
     def __init__(self, config: ClientConfig) -> None:
         self.config = config
+        self.logger = logging.getLogger("phone-proxy-rtc-client")
 
     def show_config(self) -> str:
         return json.dumps(self.config.to_dict(), indent=2, ensure_ascii=False)
@@ -97,17 +99,24 @@ class RtcClientApp:
         offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
         await self._wait_for_ice_gathering_complete(pc)
+        self.logger.info("Local ICE gathering completed; candidates=%s", self._collect_local_candidates(pc))
 
         request_body = {
             "sessionId": self.config.session_id or "",
             "type": str(pc.localDescription.type),
             "sdp": str(pc.localDescription.sdp or ""),
         }
+        self.logger.info("Posting non-trickle offer to %s sessionId=%s", self.config.offer_url, request_body["sessionId"])
 
         async with ClientSession() as session:
             async with session.post(self.config.offer_url, json=request_body) as response:
                 response.raise_for_status()
                 answer_payload = await response.json()
+        self.logger.info(
+            "Received answer type=%s from %s",
+            answer_payload.get("type"),
+            self.config.offer_url,
+        )
 
         answer = RTCSessionDescription(
             sdp=str(answer_payload["sdp"]),
@@ -138,6 +147,7 @@ class RtcClientApp:
             ice_gathering_state = pc.iceGatheringState
             local_candidates = self._collect_local_candidates(pc)
             selected_candidate_pairs = self._collect_selected_candidate_pairs(pc)
+            self.logger.info("Final selected ICE pairs=%s", selected_candidate_pairs)
             if recorder is not None and recorder_started:
                 await recorder.stop()
             await pc.close()
