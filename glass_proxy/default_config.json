@@ -1,0 +1,5 @@
+{
+  "tcp_connect_timeout_seconds": 5.0,
+  "udp_idle_timeout_seconds": 60.0,
+  "udp_reap_interval_seconds": 15.0
+}
