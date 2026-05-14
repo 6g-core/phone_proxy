@@ -1,0 +1,1 @@
+现在我希望在VIVO X300手机上实现一个app，该APP提供一个URL，/api/v1/word2voice。当手机收到这个接口数据时，将文字内容转换为语音并播放出来。是否可以实现？或者接口内容是音频数据，手机直接播放是否可以？代码路径放在/home/aicor/compute_network/phone_proxy项目下的phone_voice路径
