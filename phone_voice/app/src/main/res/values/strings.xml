@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Phone Voice</string>
+    <string name="notification_channel_name">Word2Voice Service</string>
+    <string name="notification_title">Word2Voice running</string>
+    <string name="notification_text">Listening for LAN speech requests on port 8080</string>
+    <string name="screen_title">Word2Voice</string>
+    <string name="screen_subtitle">Local LAN speech trigger for Android phones</string>
+    <string name="start_service">Start Service</string>
+    <string name="stop_service">Stop Service</string>
+    <string name="status_label">Status</string>
+    <string name="lan_url_label">LAN URL</string>
+    <string name="tts_ready_label">TTS Ready</string>
+    <string name="last_text_label">Last Text</string>
+    <string name="last_error_label">Last Error</string>
+    <string name="no_text">None</string>
+</resources>
