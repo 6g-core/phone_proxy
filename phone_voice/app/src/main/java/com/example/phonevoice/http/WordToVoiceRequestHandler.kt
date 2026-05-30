@@ -54,11 +54,15 @@ class WordToVoiceRequestHandler(
         }
 
         onAcceptedText(text)
-        val forwardUrl = settingsProvider().normalizedForwardUrl()
+        val settings = settingsProvider()
+        val forwardUrl = settings.normalizedForwardUrl()
         val forwardResult = if (forwardUrl == null) {
             ForwardResult.skipped("forwardUrl is blank")
         } else {
-            forwarder.forward(forwardUrl)
+            forwarder.forward(
+                url = forwardUrl,
+                timeoutMillis = settings.normalizedForwardTimeoutMillis(),
+            )
         }
 
         return successOrFailure(

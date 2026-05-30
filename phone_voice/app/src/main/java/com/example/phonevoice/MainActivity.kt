@@ -54,6 +54,9 @@ class MainActivity : ComponentActivity() {
             val initialSettings = remember { settingsRepository.load() }
             var listenHost by remember { mutableStateOf(initialSettings.listenHost) }
             var forwardUrl by remember { mutableStateOf(initialSettings.forwardUrl) }
+            var forwardTimeoutMillis by remember {
+                mutableStateOf(initialSettings.normalizedForwardTimeoutMillis().toString())
+            }
             val notificationLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
             ) { }
@@ -75,12 +78,15 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         listenHost = listenHost,
                         forwardUrl = forwardUrl,
+                        forwardTimeoutMillis = forwardTimeoutMillis,
                         onListenHostChange = { value ->
                             listenHost = value
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
                                     listenHost = value,
                                     forwardUrl = forwardUrl,
+                                    forwardTimeoutMillis = VoiceRuntimeSettings
+                                        .parseForwardTimeoutMillis(forwardTimeoutMillis),
                                 ),
                             )
                         },
@@ -90,6 +96,19 @@ class MainActivity : ComponentActivity() {
                                 VoiceRuntimeSettings(
                                     listenHost = listenHost,
                                     forwardUrl = value,
+                                    forwardTimeoutMillis = VoiceRuntimeSettings
+                                        .parseForwardTimeoutMillis(forwardTimeoutMillis),
+                                ),
+                            )
+                        },
+                        onForwardTimeoutMillisChange = { value ->
+                            forwardTimeoutMillis = value
+                            settingsRepository.save(
+                                VoiceRuntimeSettings(
+                                    listenHost = listenHost,
+                                    forwardUrl = forwardUrl,
+                                    forwardTimeoutMillis = VoiceRuntimeSettings
+                                        .parseForwardTimeoutMillis(value),
                                 ),
                             )
                         },
@@ -98,6 +117,8 @@ class MainActivity : ComponentActivity() {
                                 VoiceRuntimeSettings(
                                     listenHost = listenHost,
                                     forwardUrl = forwardUrl,
+                                    forwardTimeoutMillis = VoiceRuntimeSettings
+                                        .parseForwardTimeoutMillis(forwardTimeoutMillis),
                                 ),
                             )
                             ContextCompat.startForegroundService(
@@ -122,8 +143,10 @@ private fun VoiceScreen(
     state: VoiceUiState,
     listenHost: String,
     forwardUrl: String,
+    forwardTimeoutMillis: String,
     onListenHostChange: (String) -> Unit,
     onForwardUrlChange: (String) -> Unit,
+    onForwardTimeoutMillisChange: (String) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -221,6 +244,14 @@ private fun VoiceScreen(
                     singleLine = true,
                     label = { Text("Forward URL") },
                     placeholder = { Text("Disabled") },
+                )
+                OutlinedTextField(
+                    value = forwardTimeoutMillis,
+                    onValueChange = onForwardTimeoutMillisChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Forward Timeout (ms)") },
+                    placeholder = { Text("3000") },
                 )
             }
         }

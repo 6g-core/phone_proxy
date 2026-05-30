@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -30,7 +31,10 @@ class ForwardPostClientTest {
             val port = server.address.port
             val client = ForwardPostClient()
 
-            val result = client.forward("http://127.0.0.1:$port/api/v1/exec")
+            val result = client.forward(
+                url = "http://127.0.0.1:$port/api/v1/exec",
+                timeoutMillis = 3000,
+            )
 
             assertTrue(result.success)
             assertTrue(latch.await(2, TimeUnit.SECONDS))
@@ -55,10 +59,38 @@ class ForwardPostClientTest {
             val port = server.address.port
             val client = ForwardPostClient()
 
-            val result = client.forward("http://127.0.0.1:$port/api/v1/exec")
+            val result = client.forward(
+                url = "http://127.0.0.1:$port/api/v1/exec",
+                timeoutMillis = 3000,
+            )
 
             assertEquals(false, result.success)
             assertEquals(500, result.statusCode)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `uses configured timeout for slow forwarding responses`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/v1/exec") { exchange ->
+            Thread.sleep(500)
+            exchange.sendResponseHeaders(204, -1)
+            exchange.close()
+        }
+
+        try {
+            server.start()
+            val port = server.address.port
+            val client = ForwardPostClient()
+
+            val result = client.forward(
+                url = "http://127.0.0.1:$port/api/v1/exec",
+                timeoutMillis = 100,
+            )
+
+            assertFalse(result.success)
         } finally {
             server.stop(0)
         }

@@ -4,17 +4,15 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-class ForwardPostClient(
-    private val connectTimeoutMillis: Int = 3000,
-    private val readTimeoutMillis: Int = 3000,
-) : Forwarder {
-    override fun forward(url: String): ForwardResult {
+class ForwardPostClient : Forwarder {
+    override fun forward(url: String, timeoutMillis: Int): ForwardResult {
         var connection: HttpURLConnection? = null
         return try {
+            val normalizedTimeout = timeoutMillis.takeIf { it > 0 } ?: 3000
             connection = URL(url).openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
-            connection.connectTimeout = connectTimeoutMillis
-            connection.readTimeout = readTimeoutMillis
+            connection.connectTimeout = normalizedTimeout
+            connection.readTimeout = normalizedTimeout
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application")
 

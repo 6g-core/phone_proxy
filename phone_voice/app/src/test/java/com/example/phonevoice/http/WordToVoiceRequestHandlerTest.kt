@@ -87,6 +87,30 @@ class WordToVoiceRequestHandlerTest {
     }
 
     @Test
+    fun `uses configured forwarding timeout`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val forwarder = FakeForwarder()
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            settingsProvider = {
+                VoiceRuntimeSettings(
+                    forwardUrl = "http://10.45.0.2:18891/api/v1/exec",
+                    forwardTimeoutMillis = 10000,
+                )
+            },
+            forwarder = forwarder,
+        )
+
+        handler.handle(
+            method = "POST",
+            path = "/api/v1/word2voice",
+            body = """{"text":"门口取快递"}""",
+        )
+
+        assertEquals(listOf(10000), forwarder.timeouts)
+    }
+
+    @Test
     fun `returns failure when speech dispatch fails`() {
         val dispatcher = FakeSpeechDispatcher(ready = true, speakResult = false)
         val forwarder = FakeForwarder()
@@ -190,8 +214,11 @@ class WordToVoiceRequestHandlerTest {
     ) : Forwarder {
         val urls = mutableListOf<String>()
 
-        override fun forward(url: String): ForwardResult {
+        val timeouts = mutableListOf<Int>()
+
+        override fun forward(url: String, timeoutMillis: Int): ForwardResult {
             urls += url
+            timeouts += timeoutMillis
             return result
         }
     }

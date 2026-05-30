@@ -39,4 +39,25 @@ class VoiceRuntimeSettingsTest {
         assertFalse(settings.forwardingEnabled())
         assertNull(settings.normalizedForwardUrl())
     }
+
+    @Test
+    fun `uses the default forwarding timeout`() {
+        val settings = VoiceRuntimeSettings()
+
+        assertEquals(3000, settings.normalizedForwardTimeoutMillis())
+    }
+
+    @Test
+    fun `uses a configured positive forwarding timeout`() {
+        val settings = VoiceRuntimeSettings(forwardTimeoutMillis = 10000)
+
+        assertEquals(10000, settings.normalizedForwardTimeoutMillis())
+    }
+
+    @Test
+    fun `parses invalid forwarding timeout as the default`() {
+        assertEquals(3000, VoiceRuntimeSettings.parseForwardTimeoutMillis(""))
+        assertEquals(3000, VoiceRuntimeSettings.parseForwardTimeoutMillis("abc"))
+        assertEquals(3000, VoiceRuntimeSettings.parseForwardTimeoutMillis("-1"))
+    }
 }

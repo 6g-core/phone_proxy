@@ -12,6 +12,10 @@ class VoiceSettingsRepository(context: Context) {
         return VoiceRuntimeSettings(
             listenHost = prefs.getString(KEY_LISTEN_HOST, "").orEmpty(),
             forwardUrl = prefs.getString(KEY_FORWARD_URL, "").orEmpty(),
+            forwardTimeoutMillis = prefs.getInt(
+                KEY_FORWARD_TIMEOUT_MILLIS,
+                VoiceRuntimeSettings.DEFAULT_FORWARD_TIMEOUT_MILLIS,
+            ),
         )
     }
 
@@ -19,6 +23,7 @@ class VoiceSettingsRepository(context: Context) {
         prefs.edit()
             .putString(KEY_LISTEN_HOST, settings.listenHost)
             .putString(KEY_FORWARD_URL, settings.forwardUrl)
+            .putInt(KEY_FORWARD_TIMEOUT_MILLIS, settings.normalizedForwardTimeoutMillis())
             .apply()
     }
 
@@ -26,5 +31,6 @@ class VoiceSettingsRepository(context: Context) {
         private const val PREFS_NAME = "voice_runtime_settings"
         private const val KEY_LISTEN_HOST = "listen_host"
         private const val KEY_FORWARD_URL = "forward_url"
+        private const val KEY_FORWARD_TIMEOUT_MILLIS = "forward_timeout_millis"
     }
 }
