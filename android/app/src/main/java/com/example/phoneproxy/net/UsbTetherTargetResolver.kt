@@ -38,7 +38,7 @@ object UsbTetherTargetResolver {
                     networkInterface.isUp &&
                     isUsbTetherInterface(networkInterface)
             }
-            .sortedBy { networkInterface.name.orEmpty() }
+            .sortedBy { it.name.orEmpty() }
 
         candidates.forEach { networkInterface ->
             val interfaceName = buildInterfaceLabel(networkInterface)
