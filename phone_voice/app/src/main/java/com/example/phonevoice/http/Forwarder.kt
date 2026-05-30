@@ -1,7 +1,7 @@
 package com.example.phonevoice.http
 
 interface Forwarder {
-    fun forward(url: String, timeoutMillis: Int): ForwardResult
+    fun forward(url: String, timeoutMillis: Int, body: String): ForwardResult
 }
 
 data class ForwardResult(

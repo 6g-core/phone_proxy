@@ -20,7 +20,7 @@ class WordToVoiceServerTest {
         val response = server.serveBody(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)

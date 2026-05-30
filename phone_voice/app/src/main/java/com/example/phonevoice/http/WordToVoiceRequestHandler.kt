@@ -42,6 +42,9 @@ class WordToVoiceRequestHandler(
             return error(400, "text exceeds max length")
         }
 
+        val armBody = payload.optJSONObject("arm_body")
+            ?: return error(400, "arm_body must be a json object")
+
         val speechResult = if (dispatcher.speak(text)) {
             SpeechResult(success = true, message = "accepted")
         } else {
@@ -65,6 +68,7 @@ class WordToVoiceRequestHandler(
             forwarder.forward(
                 url = forwardUrl,
                 timeoutMillis = settings.normalizedForwardTimeoutMillis(),
+                body = armBody.toString(),
             )
         }
 

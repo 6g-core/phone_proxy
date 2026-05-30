@@ -286,7 +286,7 @@ private fun VoiceScreen(
                 .padding(18.dp),
         ) {
             Text(
-                text = "Send POST JSON to /api/v1/word2voice with a text field. The phone will speak it and report speech and forward results separately.",
+                text = "Send POST JSON to /api/v1/word2voice with text and arm_body fields. The phone will speak text and forward arm_body when forwarding is enabled.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF2D3748),
             )

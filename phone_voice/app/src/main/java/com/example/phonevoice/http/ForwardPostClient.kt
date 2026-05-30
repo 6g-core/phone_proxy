@@ -5,7 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class ForwardPostClient : Forwarder {
-    override fun forward(url: String, timeoutMillis: Int): ForwardResult {
+    override fun forward(url: String, timeoutMillis: Int, body: String): ForwardResult {
         var connection: HttpURLConnection? = null
         return try {
             val normalizedTimeout = timeoutMillis.takeIf { it > 0 } ?: 3000
@@ -16,10 +16,10 @@ class ForwardPostClient : Forwarder {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application")
 
-            val body = "{}".toByteArray(Charsets.UTF_8)
-            connection.setFixedLengthStreamingMode(body.size)
+            val requestBody = body.toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(requestBody.size)
             connection.outputStream.use { output ->
-                output.write(body)
+                output.write(requestBody)
             }
 
             val statusCode = connection.responseCode
