@@ -1,6 +1,5 @@
 package com.example.phonevoice.runtime
 
-import com.example.phonevoice.config.VoiceEndpointConfig
 import com.example.phonevoice.config.VoiceRuntimeSettings
 import com.example.phonevoice.http.SpeechDispatcher
 import com.example.phonevoice.state.VoiceServiceStateStore
@@ -19,9 +18,7 @@ class VoiceRuntimeController(
         if (server != null) {
             val settings = activeSettings ?: settingsProvider()
             stateStore.setRunning(
-                lanUrl = VoiceEndpointConfig.buildLanUrl(
-                    settings.displayHost(lanIpProvider()),
-                ),
+                lanUrl = settings.displayUrl(lanIpProvider()),
                 ttsReady = dispatcher.isReady(),
             )
             return
@@ -35,9 +32,7 @@ class VoiceRuntimeController(
             server = createdServer
             activeSettings = settings
             stateStore.setRunning(
-                lanUrl = VoiceEndpointConfig.buildLanUrl(
-                    settings.displayHost(lanIpProvider()),
-                ),
+                lanUrl = settings.displayUrl(lanIpProvider()),
                 ttsReady = dispatcher.isReady(),
             )
         } catch (t: Throwable) {

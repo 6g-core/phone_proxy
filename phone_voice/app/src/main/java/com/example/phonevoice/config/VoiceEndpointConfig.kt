@@ -6,10 +6,28 @@ object VoiceEndpointConfig {
     const val MAX_TEXT_LENGTH = 1000
     const val DEFAULT_BIND_HOST = "0.0.0.0"
 
-    fun buildLanUrl(host: String?): String {
+    fun buildLanUrl(
+        host: String?,
+        port: Int = PORT,
+        path: String = PATH,
+    ): String {
         if (host.isNullOrBlank()) {
             return "Unavailable"
         }
-        return "http://$host:$PORT$PATH"
+        return "http://${formatHost(host)}:$port${normalizePath(path)}"
+    }
+
+    fun normalizePath(path: String?): String {
+        val normalized = path?.trim().orEmpty().ifBlank { PATH }
+        return if (normalized.startsWith("/")) normalized else "/$normalized"
+    }
+
+    private fun formatHost(host: String): String {
+        val trimmed = host.trim()
+        return if (trimmed.contains(":") && !trimmed.startsWith("[")) {
+            "[$trimmed]"
+        } else {
+            trimmed
+        }
     }
 }

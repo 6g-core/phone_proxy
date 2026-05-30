@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
             val state by VoiceHttpForegroundService.sharedStateStore.state.collectAsStateWithLifecycle()
             val settingsRepository = remember { VoiceSettingsRepository(this@MainActivity) }
             val initialSettings = remember { settingsRepository.load() }
-            var listenHost by remember { mutableStateOf(initialSettings.listenHost) }
+            var listenUrl by remember { mutableStateOf(initialSettings.listenUrl) }
             var forwardUrl by remember { mutableStateOf(initialSettings.forwardUrl) }
             var forwardTimeoutMillis by remember {
                 mutableStateOf(initialSettings.normalizedForwardTimeoutMillis().toString())
@@ -76,14 +76,14 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     VoiceScreen(
                         state = state,
-                        listenHost = listenHost,
+                        listenUrl = listenUrl,
                         forwardUrl = forwardUrl,
                         forwardTimeoutMillis = forwardTimeoutMillis,
-                        onListenHostChange = { value ->
-                            listenHost = value
+                        onListenUrlChange = { value ->
+                            listenUrl = value
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
-                                    listenHost = value,
+                                    listenUrl = value,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
                             forwardUrl = value
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
-                                    listenHost = listenHost,
+                                    listenUrl = listenUrl,
                                     forwardUrl = value,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
                             forwardTimeoutMillis = value
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
-                                    listenHost = listenHost,
+                                    listenUrl = listenUrl,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(value),
@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
                         onStart = {
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
-                                    listenHost = listenHost,
+                                    listenUrl = listenUrl,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -141,10 +141,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun VoiceScreen(
     state: VoiceUiState,
-    listenHost: String,
+    listenUrl: String,
     forwardUrl: String,
     forwardTimeoutMillis: String,
-    onListenHostChange: (String) -> Unit,
+    onListenUrlChange: (String) -> Unit,
     onForwardUrlChange: (String) -> Unit,
     onForwardTimeoutMillisChange: (String) -> Unit,
     onStart: () -> Unit,
@@ -201,7 +201,7 @@ private fun VoiceScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatusRow(label = "Status", value = state.status.name)
-                StatusRow(label = "LAN URL", value = state.lanUrl)
+                StatusRow(label = "Listen URL", value = state.lanUrl)
                 StatusRow(label = "TTS Ready", value = state.ttsReady.toString())
                 StatusRow(
                     label = "Last Text",
@@ -230,12 +230,12 @@ private fun VoiceScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 OutlinedTextField(
-                    value = listenHost,
-                    onValueChange = onListenHostChange,
+                    value = listenUrl,
+                    onValueChange = onListenUrlChange,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Listen Host") },
-                    placeholder = { Text("Auto LAN IP") },
+                    label = { Text("Listen URL") },
+                    placeholder = { Text("Auto LAN URL") },
                 )
                 OutlinedTextField(
                     value = forwardUrl,

@@ -43,7 +43,7 @@ class VoiceRuntimeControllerTest {
     }
 
     @Test
-    fun `configured listen host overrides the LAN url display host`() {
+    fun `configured listen url overrides the LAN url display`() {
         val store = VoiceServiceStateStore()
         var settingsSeenByServer: VoiceRuntimeSettings? = null
         val controller = VoiceRuntimeController(
@@ -52,7 +52,7 @@ class VoiceRuntimeControllerTest {
             lanIpProvider = { "192.168.1.23" },
             settingsProvider = {
                 VoiceRuntimeSettings(
-                    listenHost = "10.45.0.10",
+                    listenUrl = "http://10.45.0.10:18080/custom/word2voice",
                     forwardUrl = "http://10.45.0.2:18891/api/v1/exec",
                 )
             },
@@ -64,8 +64,8 @@ class VoiceRuntimeControllerTest {
 
         controller.start()
 
-        assertEquals("http://10.45.0.10:8080/api/v1/word2voice", store.state.value.lanUrl)
-        assertEquals("10.45.0.10", settingsSeenByServer?.listenHost)
+        assertEquals("http://10.45.0.10:18080/custom/word2voice", store.state.value.lanUrl)
+        assertEquals("http://10.45.0.10:18080/custom/word2voice", settingsSeenByServer?.listenUrl)
         assertEquals(
             "http://10.45.0.2:18891/api/v1/exec",
             settingsSeenByServer?.forwardUrl,

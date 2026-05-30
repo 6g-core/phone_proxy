@@ -9,19 +9,21 @@ import java.util.Locale
 class WordToVoiceServer(
     private val handler: WordToVoiceRequestHandler,
     listenHost: String? = null,
+    listenPort: Int = VoiceEndpointConfig.PORT,
 ) : NanoHTTPD(
     normalizeListenHost(listenHost) ?: VoiceEndpointConfig.DEFAULT_BIND_HOST,
-    VoiceEndpointConfig.PORT,
+    normalizeListenPort(listenPort),
 ),
     EmbeddedServer {
     val listenHost: String? = normalizeListenHost(listenHost)
+    val listenPort: Int = normalizeListenPort(listenPort)
 
     override fun start() {
         try {
             super.start(SOCKET_READ_TIMEOUT, false)
         } catch (exc: IOException) {
             val hostLabel = listenHost ?: VoiceEndpointConfig.DEFAULT_BIND_HOST
-            throw IllegalStateException("Unable to bind $hostLabel:${VoiceEndpointConfig.PORT}", exc)
+            throw IllegalStateException("Unable to bind $hostLabel:$listenPort", exc)
         }
     }
 
@@ -102,3 +104,5 @@ class WordToVoiceServer(
 }
 
 private fun normalizeListenHost(host: String?): String? = host?.trim()?.ifBlank { null }
+
+private fun normalizeListenPort(port: Int): Int = port.takeIf { it > 0 } ?: VoiceEndpointConfig.PORT

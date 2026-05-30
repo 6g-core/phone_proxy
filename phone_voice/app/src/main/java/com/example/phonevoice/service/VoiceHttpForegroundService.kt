@@ -46,9 +46,11 @@ class VoiceHttpForegroundService : Service() {
                         dispatcher = ttsManager,
                         settingsProvider = { settingsRepository.load() },
                         forwarder = ForwardPostClient(),
+                        requestPath = settings.normalizedListenPath(),
                         onAcceptedText = { text -> stateStore.setLastText(text) },
                     ),
                     listenHost = settings.normalizedListenHost(),
+                    listenPort = settings.normalizedListenPort(),
                 )
             },
         )

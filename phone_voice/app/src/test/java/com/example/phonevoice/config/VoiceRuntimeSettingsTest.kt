@@ -7,25 +7,48 @@ import org.junit.Test
 
 class VoiceRuntimeSettingsTest {
     @Test
-    fun `uses default LAN host when listen host is blank`() {
-        val settings = VoiceRuntimeSettings(listenHost = "   ", forwardUrl = "")
+    fun `uses default LAN url when listen url is blank`() {
+        val settings = VoiceRuntimeSettings(listenUrl = "   ", forwardUrl = "")
 
-        assertEquals("192.168.1.23", settings.displayHost(defaultHost = "192.168.1.23"))
+        assertEquals(
+            "http://192.168.1.23:8080/api/v1/word2voice",
+            settings.displayUrl(defaultHost = "192.168.1.23"),
+        )
         assertNull(settings.normalizedListenHost())
     }
 
     @Test
-    fun `uses configured listen host before default LAN host`() {
-        val settings = VoiceRuntimeSettings(listenHost = " 10.45.0.10 ", forwardUrl = "")
+    fun `uses configured listen url before default LAN url`() {
+        val settings = VoiceRuntimeSettings(
+            listenUrl = " http://10.45.0.10:18080/custom/word2voice ",
+            forwardUrl = "",
+        )
 
-        assertEquals("10.45.0.10", settings.displayHost(defaultHost = "192.168.1.23"))
+        assertEquals(
+            "http://10.45.0.10:18080/custom/word2voice",
+            settings.displayUrl(defaultHost = "192.168.1.23"),
+        )
         assertEquals("10.45.0.10", settings.normalizedListenHost())
+        assertEquals(18080, settings.normalizedListenPort())
+        assertEquals("/custom/word2voice", settings.normalizedListenPath())
+    }
+
+    @Test
+    fun `fills default listen port and path when configured url omits them`() {
+        val settings = VoiceRuntimeSettings(listenUrl = "http://10.45.0.10")
+
+        assertEquals(
+            "http://10.45.0.10:8080/api/v1/word2voice",
+            settings.displayUrl(defaultHost = "192.168.1.23"),
+        )
+        assertEquals(8080, settings.normalizedListenPort())
+        assertEquals("/api/v1/word2voice", settings.normalizedListenPath())
     }
 
     @Test
     fun `normalizes optional forward url`() {
         val settings = VoiceRuntimeSettings(
-            listenHost = "",
+            listenUrl = "",
             forwardUrl = " http://10.45.0.2:18891/api/v1/exec ",
         )
 
@@ -34,7 +57,7 @@ class VoiceRuntimeSettingsTest {
 
     @Test
     fun `treats blank forward url as disabled`() {
-        val settings = VoiceRuntimeSettings(listenHost = "", forwardUrl = " ")
+        val settings = VoiceRuntimeSettings(listenUrl = "", forwardUrl = " ")
 
         assertFalse(settings.forwardingEnabled())
         assertNull(settings.normalizedForwardUrl())

@@ -84,7 +84,7 @@ class WordToVoiceServerTest {
     }
 
     @Test
-    fun `stores configured listen host`() {
+    fun `stores configured listen address`() {
         val server = WordToVoiceServer(
             handler = WordToVoiceRequestHandler(
                 dispatcher = object : SpeechDispatcher {
@@ -93,8 +93,10 @@ class WordToVoiceServerTest {
                 },
             ),
             listenHost = "10.45.0.10",
+            listenPort = 18080,
         )
 
         assertEquals("10.45.0.10", server.listenHost)
+        assertEquals(18080, server.listenPort)
     }
 }

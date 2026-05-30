@@ -195,6 +195,24 @@ class WordToVoiceRequestHandlerTest {
         assertEquals(404, result.statusCode)
     }
 
+    @Test
+    fun `accepts the configured listen path`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            requestPath = "/custom/word2voice",
+        )
+
+        val result = handler.handle(
+            method = "POST",
+            path = "/custom/word2voice",
+            body = """{"text":"门口取快递"}""",
+        )
+
+        assertEquals(200, result.statusCode)
+        assertEquals(listOf("门口取快递"), dispatcher.spoken)
+    }
+
     private class FakeSpeechDispatcher(
         private val ready: Boolean,
         private val speakResult: Boolean = true,

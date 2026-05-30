@@ -9,10 +9,13 @@ class WordToVoiceRequestHandler(
     private val dispatcher: SpeechDispatcher,
     private val settingsProvider: () -> VoiceRuntimeSettings = { VoiceRuntimeSettings() },
     private val forwarder: Forwarder = ForwardPostClient(),
+    requestPath: String = VoiceEndpointConfig.PATH,
     private val onAcceptedText: (String) -> Unit = {},
 ) {
+    private val requestPath = VoiceEndpointConfig.normalizePath(requestPath)
+
     fun handle(method: String, path: String, body: String?): HttpResult {
-        if (path != VoiceEndpointConfig.PATH) {
+        if (path != requestPath) {
             return error(404, "path not found")
         }
 
