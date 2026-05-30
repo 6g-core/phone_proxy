@@ -16,17 +16,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.phonevoice.config.VoiceRuntimeSettings
+import com.example.phonevoice.config.VoiceSettingsRepository
 import com.example.phonevoice.service.VoiceHttpForegroundService
 import com.example.phonevoice.state.VoiceUiState
 
@@ -42,6 +50,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val state by VoiceHttpForegroundService.sharedStateStore.state.collectAsStateWithLifecycle()
+            val settingsRepository = remember { VoiceSettingsRepository(this@MainActivity) }
+            val initialSettings = remember { settingsRepository.load() }
+            var listenHost by remember { mutableStateOf(initialSettings.listenHost) }
+            var forwardUrl by remember { mutableStateOf(initialSettings.forwardUrl) }
             val notificationLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
             ) { }
@@ -61,7 +73,33 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     VoiceScreen(
                         state = state,
+                        listenHost = listenHost,
+                        forwardUrl = forwardUrl,
+                        onListenHostChange = { value ->
+                            listenHost = value
+                            settingsRepository.save(
+                                VoiceRuntimeSettings(
+                                    listenHost = value,
+                                    forwardUrl = forwardUrl,
+                                ),
+                            )
+                        },
+                        onForwardUrlChange = { value ->
+                            forwardUrl = value
+                            settingsRepository.save(
+                                VoiceRuntimeSettings(
+                                    listenHost = listenHost,
+                                    forwardUrl = value,
+                                ),
+                            )
+                        },
                         onStart = {
+                            settingsRepository.save(
+                                VoiceRuntimeSettings(
+                                    listenHost = listenHost,
+                                    forwardUrl = forwardUrl,
+                                ),
+                            )
                             ContextCompat.startForegroundService(
                                 this@MainActivity,
                                 VoiceHttpForegroundService.startIntent(this@MainActivity),
@@ -82,6 +120,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun VoiceScreen(
     state: VoiceUiState,
+    listenHost: String,
+    forwardUrl: String,
+    onListenHostChange: (String) -> Unit,
+    onForwardUrlChange: (String) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -97,6 +139,7 @@ private fun VoiceScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(topGradient)
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -147,6 +190,41 @@ private fun VoiceScreen(
             }
         }
 
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBF5)),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Runtime Config",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF111827),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                OutlinedTextField(
+                    value = listenHost,
+                    onValueChange = onListenHostChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Listen Host") },
+                    placeholder = { Text("Auto LAN IP") },
+                )
+                OutlinedTextField(
+                    value = forwardUrl,
+                    onValueChange = onForwardUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Forward URL") },
+                    placeholder = { Text("Disabled") },
+                )
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -177,7 +255,7 @@ private fun VoiceScreen(
                 .padding(18.dp),
         ) {
             Text(
-                text = "Send POST JSON to /api/v1/word2voice with a text field. The phone will speak it immediately once TTS is ready.",
+                text = "Send POST JSON to /api/v1/word2voice with a text field. The phone will speak it and report speech and forward results separately.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF2D3748),
             )

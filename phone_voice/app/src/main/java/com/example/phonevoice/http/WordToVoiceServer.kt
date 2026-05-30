@@ -8,13 +8,20 @@ import java.util.Locale
 
 class WordToVoiceServer(
     private val handler: WordToVoiceRequestHandler,
-) : NanoHTTPD(VoiceEndpointConfig.PORT), EmbeddedServer {
+    listenHost: String? = null,
+) : NanoHTTPD(
+    normalizeListenHost(listenHost) ?: VoiceEndpointConfig.DEFAULT_BIND_HOST,
+    VoiceEndpointConfig.PORT,
+),
+    EmbeddedServer {
+    val listenHost: String? = normalizeListenHost(listenHost)
 
     override fun start() {
         try {
             super.start(SOCKET_READ_TIMEOUT, false)
         } catch (exc: IOException) {
-            throw IllegalStateException("Unable to bind port ${VoiceEndpointConfig.PORT}", exc)
+            val hostLabel = listenHost ?: VoiceEndpointConfig.DEFAULT_BIND_HOST
+            throw IllegalStateException("Unable to bind $hostLabel:${VoiceEndpointConfig.PORT}", exc)
         }
     }
 
@@ -93,3 +100,5 @@ class WordToVoiceServer(
         private val CHARSET_REGEX = Regex("(^|;)\\s*charset\\s*=", RegexOption.IGNORE_CASE)
     }
 }
+
+private fun normalizeListenHost(host: String?): String? = host?.trim()?.ifBlank { null }

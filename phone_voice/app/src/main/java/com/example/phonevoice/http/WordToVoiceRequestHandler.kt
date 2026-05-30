@@ -1,11 +1,14 @@
 package com.example.phonevoice.http
 
 import com.example.phonevoice.config.VoiceEndpointConfig
+import com.example.phonevoice.config.VoiceRuntimeSettings
 import org.json.JSONException
 import org.json.JSONObject
 
 class WordToVoiceRequestHandler(
     private val dispatcher: SpeechDispatcher,
+    private val settingsProvider: () -> VoiceRuntimeSettings = { VoiceRuntimeSettings() },
+    private val forwarder: Forwarder = ForwardPostClient(),
     private val onAcceptedText: (String) -> Unit = {},
 ) {
     fun handle(method: String, path: String, body: String?): HttpResult {
@@ -36,20 +39,32 @@ class WordToVoiceRequestHandler(
             return error(400, "text exceeds max length")
         }
 
-        if (!dispatcher.speak(text)) {
-            return error(500, "failed to speak text")
+        val speechResult = if (dispatcher.speak(text)) {
+            SpeechResult(success = true, message = "accepted")
+        } else {
+            SpeechResult(success = false, message = "failed to speak text")
+        }
+
+        if (!speechResult.success) {
+            return successOrFailure(
+                text = text,
+                speechResult = speechResult,
+                forwardResult = ForwardResult.skipped("skipped because speech failed"),
+            )
         }
 
         onAcceptedText(text)
-        return HttpResult(
-            statusCode = 200,
-            body = JSONObject(
-                mapOf(
-                    "success" to true,
-                    "message" to "accepted",
-                    "text" to text,
-                ),
-            ).toString(),
+        val forwardUrl = settingsProvider().normalizedForwardUrl()
+        val forwardResult = if (forwardUrl == null) {
+            ForwardResult.skipped("forwardUrl is blank")
+        } else {
+            forwarder.forward(forwardUrl)
+        }
+
+        return successOrFailure(
+            text = text,
+            speechResult = speechResult,
+            forwardResult = forwardResult,
         )
     }
 
@@ -64,4 +79,49 @@ class WordToVoiceRequestHandler(
             ).toString(),
         )
     }
+
+    private fun successOrFailure(
+        text: String,
+        speechResult: SpeechResult,
+        forwardResult: ForwardResult,
+    ): HttpResult {
+        val success = speechResult.success && forwardResult.success
+        val message = when {
+            !speechResult.success -> "speech failed"
+            !forwardResult.success -> "forward failed"
+            else -> "accepted"
+        }
+
+        return HttpResult(
+            statusCode = if (success) 200 else 500,
+            body = JSONObject()
+                .put("success", success)
+                .put("message", message)
+                .put("text", text)
+                .put(
+                    "speech",
+                    JSONObject()
+                        .put("success", speechResult.success)
+                        .put("message", speechResult.message),
+                )
+                .put("forward", forwardResult.toJson())
+                .toString(),
+        )
+    }
+
+    private fun ForwardResult.toJson(): JSONObject {
+        val json = JSONObject()
+            .put("success", success)
+            .put("message", message)
+            .put("skipped", skipped)
+        if (statusCode != null) {
+            json.put("statusCode", statusCode)
+        }
+        return json
+    }
+
+    private data class SpeechResult(
+        val success: Boolean,
+        val message: String,
+    )
 }

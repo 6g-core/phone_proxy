@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.phonevoice.R
+import com.example.phonevoice.config.VoiceSettingsRepository
+import com.example.phonevoice.http.ForwardPostClient
 import com.example.phonevoice.http.WordToVoiceRequestHandler
 import com.example.phonevoice.http.WordToVoiceServer
 import com.example.phonevoice.net.LocalIpResolver
@@ -21,10 +23,12 @@ class VoiceHttpForegroundService : Service() {
     private val stateStore = sharedStateStore
     private lateinit var ttsManager: TtsManager
     private lateinit var controller: VoiceRuntimeController
+    private lateinit var settingsRepository: VoiceSettingsRepository
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        settingsRepository = VoiceSettingsRepository(this)
 
         ttsManager = TtsManager(this) { ready ->
             stateStore.setTtsReady(ready)
@@ -35,12 +39,16 @@ class VoiceHttpForegroundService : Service() {
             stateStore = stateStore,
             dispatcher = ttsManager,
             lanIpProvider = { LocalIpResolver.resolveLanIpv4() },
-            serverFactory = {
+            settingsProvider = { settingsRepository.load() },
+            serverFactory = { settings ->
                 WordToVoiceServer(
                     handler = WordToVoiceRequestHandler(
                         dispatcher = ttsManager,
+                        settingsProvider = { settingsRepository.load() },
+                        forwarder = ForwardPostClient(),
                         onAcceptedText = { text -> stateStore.setLastText(text) },
                     ),
+                    listenHost = settings.normalizedListenHost(),
                 )
             },
         )

@@ -82,4 +82,19 @@ class WordToVoiceServerTest {
             server.normalizeContentTypeHeader("application/json; charset=UTF-8"),
         )
     }
+
+    @Test
+    fun `stores configured listen host`() {
+        val server = WordToVoiceServer(
+            handler = WordToVoiceRequestHandler(
+                dispatcher = object : SpeechDispatcher {
+                    override fun isReady(): Boolean = true
+                    override fun speak(text: String): Boolean = true
+                },
+            ),
+            listenHost = "10.45.0.10",
+        )
+
+        assertEquals("10.45.0.10", server.listenHost)
+    }
 }

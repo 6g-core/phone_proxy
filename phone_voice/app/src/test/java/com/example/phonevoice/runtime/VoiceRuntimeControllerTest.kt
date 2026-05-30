@@ -1,5 +1,6 @@
 package com.example.phonevoice.runtime
 
+import com.example.phonevoice.config.VoiceRuntimeSettings
 import com.example.phonevoice.http.SpeechDispatcher
 import com.example.phonevoice.state.VoiceServiceStateStore
 import com.example.phonevoice.state.VoiceServiceStatus
@@ -15,7 +16,7 @@ class VoiceRuntimeControllerTest {
             stateStore = store,
             dispatcher = FakeSpeechDispatcher(ready = true),
             lanIpProvider = { "192.168.1.23" },
-            serverFactory = { FakeEmbeddedServer() },
+            serverFactory = { _ -> FakeEmbeddedServer() },
         )
 
         controller.start()
@@ -32,13 +33,43 @@ class VoiceRuntimeControllerTest {
             stateStore = store,
             dispatcher = FakeSpeechDispatcher(ready = true),
             lanIpProvider = { "192.168.1.23" },
-            serverFactory = { ThrowingEmbeddedServer() },
+            serverFactory = { _ -> ThrowingEmbeddedServer() },
         )
 
         controller.start()
 
         assertEquals(VoiceServiceStatus.ERROR, store.state.value.status)
         assertTrue(store.state.value.lastError.contains("Failed to start HTTP server"))
+    }
+
+    @Test
+    fun `configured listen host overrides the LAN url display host`() {
+        val store = VoiceServiceStateStore()
+        var settingsSeenByServer: VoiceRuntimeSettings? = null
+        val controller = VoiceRuntimeController(
+            stateStore = store,
+            dispatcher = FakeSpeechDispatcher(ready = true),
+            lanIpProvider = { "192.168.1.23" },
+            settingsProvider = {
+                VoiceRuntimeSettings(
+                    listenHost = "10.45.0.10",
+                    forwardUrl = "http://10.45.0.2:18891/api/v1/exec",
+                )
+            },
+            serverFactory = { settings ->
+                settingsSeenByServer = settings
+                FakeEmbeddedServer()
+            },
+        )
+
+        controller.start()
+
+        assertEquals("http://10.45.0.10:8080/api/v1/word2voice", store.state.value.lanUrl)
+        assertEquals("10.45.0.10", settingsSeenByServer?.listenHost)
+        assertEquals(
+            "http://10.45.0.2:18891/api/v1/exec",
+            settingsSeenByServer?.forwardUrl,
+        )
     }
 
     @Test
@@ -49,7 +80,7 @@ class VoiceRuntimeControllerTest {
             stateStore = store,
             dispatcher = FakeSpeechDispatcher(ready = false),
             lanIpProvider = { "192.168.1.23" },
-            serverFactory = { server },
+            serverFactory = { _ -> server },
         )
 
         controller.start()

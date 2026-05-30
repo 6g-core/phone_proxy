@@ -49,9 +49,11 @@ cd /home/aicor/compute_netwok/phone_proxy/phone_voice
 ## Use On Device
 
 1. Open the app.
-2. Tap `Start Service`.
-3. Confirm the app shows a LAN URL such as `http://192.168.1.23:8080/api/v1/word2voice`.
-4. Send a request from another device on the same LAN:
+2. Optionally enter a `Listen Host`. Leave it blank to use the automatically detected LAN IP.
+3. Optionally enter a `Forward URL`. Leave it blank to disable forwarding.
+4. Tap `Start Service`.
+5. Confirm the app shows a LAN URL such as `http://192.168.1.23:8080/api/v1/word2voice`.
+6. Send a request from another device on the same LAN:
 
 ```bash
 curl -X POST http://<phone-ip>:8080/api/v1/word2voice \
@@ -61,8 +63,19 @@ curl -X POST http://<phone-ip>:8080/api/v1/word2voice \
 
 The phone should speak the text immediately.
 
+If `Forward URL` is set, the app also sends:
+
+```bash
+curl -X POST http://10.45.0.2:18891/api/v1/exec \
+  -H "Content-Type:application" \
+  -d '{}'
+```
+
+The `/api/v1/word2voice` response contains separate `speech` and `forward` results. If speech fails, or if forwarding is configured and fails, the endpoint returns a failure response.
+
 ## Notes
 
 - `GET /api/v1/word2voice` returns `405`.
 - Blank text returns `400`.
 - If Android `TextToSpeech` is not ready yet, the endpoint returns `503`.
+- Blank `Forward URL` skips forwarding and does not count as a failure.
