@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -32,9 +33,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -44,9 +47,12 @@ import com.example.phoneproxy.model.udpListenPorts
 import com.example.phoneproxy.model.udpListenPortLabel
 import com.example.phoneproxy.model.udpTargetPortLabel
 import com.example.phoneproxy.model.validateAgainst
+import com.example.phoneproxy.net.UsbTetherTarget
+import com.example.phoneproxy.net.UsbTetherTargetResolver
 import com.example.phoneproxy.service.PhoneProxyRuntime
 import com.example.phoneproxy.service.PhoneProxyService
 import com.example.phoneproxy.ui.RuleDraft
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,9 +66,16 @@ class MainActivity : ComponentActivity() {
                 var editingRuleId by remember { mutableStateOf<String?>(null) }
                 var errorMessage by remember { mutableStateOf<String?>(null) }
                 val runtimeStatus by PhoneProxyRuntime.status.collectAsState()
+                val usbTetherTarget by produceState<UsbTetherTarget?>(initialValue = UsbTetherTargetResolver.resolve()) {
+                    while (true) {
+                        value = UsbTetherTargetResolver.resolve()
+                        delay(3_000)
+                    }
+                }
 
                 PhoneProxyScreen(
                     rules = rules,
+                    usbTetherTarget = usbTetherTarget,
                     isServiceRunning = runtimeStatus.isRunning,
                     serviceMessage = runtimeStatus.message,
                     onToggleService = { shouldRun ->
@@ -105,11 +118,34 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    onToggleUsbAutoTarget = { rule, enabled ->
+                        val index = rules.indexOfFirst { it.id == rule.id }
+                        if (index >= 0) {
+                            val resolvedTargetIp = usbTetherTarget?.targetIp
+                            val updated = rules[index].copy(
+                                usbTetherAutoTarget = enabled,
+                                targetIp = if (enabled && !resolvedTargetIp.isNullOrBlank()) {
+                                    resolvedTargetIp
+                                } else {
+                                    rules[index].targetIp
+                                },
+                            )
+                            val error = updated.validateAgainst(rules.filter { it.id != rule.id })
+                            if (error == null) {
+                                rules[index] = updated
+                                repository.saveRules(rules)
+                                reloadServiceIfRunning(runtimeStatus.isRunning)
+                            } else {
+                                errorMessage = error
+                            }
+                        }
+                    },
                 )
 
                 editingDraft?.let { draft ->
                     RuleEditorDialog(
                         draft = draft,
+                        usbTetherTarget = usbTetherTarget,
                         errorMessage = errorMessage,
                         onDismiss = {
                             editingDraft = null
@@ -121,7 +157,13 @@ class MainActivity : ComponentActivity() {
                             if (draftResult.isFailure) {
                                 errorMessage = draftResult.exceptionOrNull()?.message
                             } else {
-                                val rule = draftResult.getOrThrow()
+                                val rule = draftResult.getOrThrow().let { candidate ->
+                                    if (candidate.usbTetherAutoTarget && usbTetherTarget != null) {
+                                        candidate.copy(targetIp = usbTetherTarget!!.targetIp)
+                                    } else {
+                                        candidate
+                                    }
+                                }
                                 val validatedRule = if (editingRuleId == null) {
                                     rule
                                 } else {
@@ -189,6 +231,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun PhoneProxyScreen(
     rules: List<ProxyRule>,
+    usbTetherTarget: UsbTetherTarget?,
     isServiceRunning: Boolean,
     serviceMessage: String,
     onToggleService: (Boolean) -> Unit,
@@ -196,6 +239,7 @@ private fun PhoneProxyScreen(
     onEditRule: (ProxyRule) -> Unit,
     onDeleteRule: (ProxyRule) -> Unit,
     onToggleRule: (ProxyRule, Boolean) -> Unit,
+    onToggleUsbAutoTarget: (ProxyRule, Boolean) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -241,33 +285,67 @@ private fun PhoneProxyScreen(
                 }
             }
             items(rules, key = { it.id }) { rule ->
+                val effectiveTargetIp = if (rule.usbTetherAutoTarget) {
+                    usbTetherTarget?.targetIp ?: rule.targetIp
+                } else {
+                    rule.targetIp
+                }
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(rule.name, style = MaterialTheme.typography.titleMedium)
-                        Text("TCP: ${rule.listenIp}:${rule.listenPort} -> ${rule.targetIp}:${rule.targetPort}")
+                        Text("TCP: ${rule.listenIp}:${rule.listenPort} -> $effectiveTargetIp:${rule.targetPort}")
                         Text(
                             "UDP: ${rule.listenIp}:${rule.udpListenPortLabel()} -> " +
-                                "${rule.targetIp}:${rule.udpTargetPortLabel()}"
+                                "$effectiveTargetIp:${rule.udpTargetPortLabel()}"
                         )
-                        Row(
+                        if (rule.usbTetherAutoTarget) {
+                            Text(
+                                usbTetherTarget?.let {
+                                    "USB auto: ${it.interfaceName} ${it.sourceIp} -> ${it.targetIp}"
+                                } ?: "USB auto: tether interface not detected; using saved target ${rule.targetIp}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Checkbox(
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                RuleToggle(
+                                    label = "Enabled",
                                     checked = rule.enabled,
                                     onCheckedChange = { onToggleRule(rule, it) },
+                                    modifier = Modifier.weight(1f),
                                 )
-                                Text("Enabled")
+                                RuleToggle(
+                                    label = "Auto",
+                                    checked = rule.usbTetherAutoTarget,
+                                    onCheckedChange = { onToggleUsbAutoTarget(rule, it) },
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
-                            Button(onClick = { onEditRule(rule) }) {
-                                Text("Edit")
-                            }
-                            Button(onClick = { onDeleteRule(rule) }) {
-                                Text("Delete")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Button(
+                                    onClick = { onEditRule(rule) },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Edit")
+                                }
+                                Button(
+                                    onClick = { onDeleteRule(rule) },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Delete")
+                                }
                             }
                         }
                     }
@@ -280,6 +358,7 @@ private fun PhoneProxyScreen(
 @Composable
 private fun RuleEditorDialog(
     draft: RuleDraft,
+    usbTetherTarget: UsbTetherTarget?,
     errorMessage: String?,
     onDismiss: () -> Unit,
     onDraftChanged: (RuleDraft) -> Unit,
@@ -339,6 +418,7 @@ private fun RuleEditorDialog(
                     label = { Text("Target IP") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    enabled = !draft.usbTetherAutoTarget,
                 )
                 OutlinedTextField(
                     value = draft.targetPort,
@@ -347,6 +427,24 @@ private fun RuleEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = draft.usbTetherAutoTarget,
+                        onCheckedChange = { onDraftChanged(draft.copy(usbTetherAutoTarget = it)) },
+                    )
+                    Text("Auto target (.200)")
+                }
+                if (draft.usbTetherAutoTarget) {
+                    Text(
+                        usbTetherTarget?.let {
+                            "Detected ${it.interfaceName}: ${it.sourceIp} -> auto target ${it.targetIp}"
+                        } ?: "USB tether interface not detected. The rule will keep its saved target IP until USB tethering appears.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Text("UDP port range (optional 1:1 mapping)", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Leave all four UDP fields empty to reuse the TCP listen/target port.",
@@ -390,6 +488,27 @@ private fun RuleEditorDialog(
             }
         },
     )
+}
+
+@Composable
+private fun RuleToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+        Text(label)
+        Spacer(modifier = Modifier.weight(1f))
+    }
 }
 
 private fun suggestNextListenPort(rules: List<ProxyRule>, basePort: Int = 10002): Int {

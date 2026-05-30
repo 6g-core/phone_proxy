@@ -1,9 +1,14 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+import com.android.build.api.dsl.ApplicationExtension
+import org.gradle.api.JavaVersion
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.withType
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-android {
+apply(plugin = "com.android.application")
+apply(plugin = "org.jetbrains.kotlin.android")
+
+extensions.configure<ApplicationExtension> {
     namespace = "com.example.phoneproxy"
     compileSdk = 34
 
@@ -21,7 +26,7 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -33,10 +38,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -54,21 +55,27 @@ android {
     }
 }
 
+tasks.withType<KotlinCompile>().configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
 
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+    add("implementation", composeBom)
+    add("androidTestImplementation", composeBom)
 
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.9.1")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    add("implementation", "androidx.core:core-ktx:1.13.1")
+    add("implementation", "androidx.activity:activity-compose:1.9.1")
+    add("implementation", "com.google.android.material:material:1.12.0")
+    add("implementation", "androidx.compose.material3:material3")
+    add("implementation", "androidx.compose.ui:ui")
+    add("implementation", "androidx.compose.ui:ui-tooling-preview")
+    add("implementation", "androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    add("implementation", "androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    add("debugImplementation", "androidx.compose.ui:ui-tooling")
+    add("debugImplementation", "androidx.compose.ui:ui-test-manifest")
 }

@@ -49,6 +49,7 @@ class RuleRepository(context: Context) {
             .put("udpListenPortEnd", udpListenPortEnd)
             .put("udpTargetPortStart", udpTargetPortStart)
             .put("udpTargetPortEnd", udpTargetPortEnd)
+            .put("usbTetherAutoTarget", usbTetherAutoTarget)
             .put("enabled", enabled)
     }
 
@@ -64,6 +65,7 @@ class RuleRepository(context: Context) {
             udpListenPortEnd = optionalInt("udpListenPortEnd"),
             udpTargetPortStart = optionalInt("udpTargetPortStart"),
             udpTargetPortEnd = optionalInt("udpTargetPortEnd"),
+            usbTetherAutoTarget = optBoolean("usbTetherAutoTarget", false),
             enabled = optBoolean("enabled", true),
         )
     }

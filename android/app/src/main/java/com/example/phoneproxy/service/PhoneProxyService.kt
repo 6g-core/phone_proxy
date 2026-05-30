@@ -9,12 +9,16 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.example.phoneproxy.data.RuleRepository
+import com.example.phoneproxy.net.UsbTetherRuleResolution
+import com.example.phoneproxy.net.UsbTetherTargetResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -22,6 +26,7 @@ class PhoneProxyService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val actionMutex = Mutex()
     private val engine = PhoneProxyEngine()
+    private var usbAutoMonitorJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -30,7 +35,7 @@ class PhoneProxyService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START, ACTION_RELOAD -> {
+            ACTION_START, ACTION_RELOAD, ACTION_APPLY_RULES -> {
                 startForeground(
                     NOTIFICATION_ID,
                     buildNotification("Starting proxy engine...")
@@ -38,7 +43,7 @@ class PhoneProxyService : Service() {
                 serviceScope.launch {
                     actionMutex.withLock {
                         val repository = RuleRepository(applicationContext)
-                        val rules = when (intent.action) {
+                        val storedRules = when (intent.action) {
                             ACTION_APPLY_RULES -> {
                                 val rawRules = intent.getStringExtra(EXTRA_RULES_JSON)
                                     ?: throw IllegalArgumentException("Missing rules json.")
@@ -46,16 +51,21 @@ class PhoneProxyService : Service() {
                             }
                             else -> repository.loadRules()
                         }
+                        val resolution = refreshUsbAutoTargets(repository, storedRules)
+                        val rules = resolution.rules
                         try {
                             engine.start(rules)
                             val enabledRuleCount = rules.count { it.enabled }
+                            ensureUsbAutoMonitor(repository, resolution)
                             notifyForeground(
                                 buildNotification(
-                                    "Running with $enabledRuleCount enabled rule(s)."
+                                    buildRunningMessage(enabledRuleCount, resolution)
                                 )
                             )
                         } catch (exc: Exception) {
                             Log.e(TAG, "Failed to start proxy engine", exc)
+                            usbAutoMonitorJob?.cancel()
+                            usbAutoMonitorJob = null
                             PhoneProxyRuntime.update(
                                 ProxyRuntimeStatus(
                                     isRunning = false,
@@ -73,6 +83,8 @@ class PhoneProxyService : Service() {
             ACTION_STOP -> {
                 serviceScope.launch {
                     actionMutex.withLock {
+                        usbAutoMonitorJob?.cancel()
+                        usbAutoMonitorJob = null
                         engine.stop()
                         stopSelf()
                     }
@@ -85,6 +97,8 @@ class PhoneProxyService : Service() {
     override fun onDestroy() {
         runBlocking {
             actionMutex.withLock {
+                usbAutoMonitorJob?.cancel()
+                usbAutoMonitorJob = null
                 engine.stop()
             }
         }
@@ -121,6 +135,64 @@ class PhoneProxyService : Service() {
         manager.createNotificationChannel(channel)
     }
 
+    private fun buildRunningMessage(
+        enabledRuleCount: Int,
+        resolution: UsbTetherRuleResolution,
+    ): String {
+        if (resolution.autoRuleCount <= 0) {
+            return "Running with $enabledRuleCount enabled rule(s)."
+        }
+        val resolved = resolution.resolvedTarget
+        return if (resolved != null) {
+            "Running with $enabledRuleCount enabled rule(s). USB ${resolved.interfaceName}: ${resolved.sourceIp} -> ${resolved.targetIp}"
+        } else {
+            "Running with $enabledRuleCount enabled rule(s). USB tether target not detected; using saved target IP."
+        }
+    }
+
+    private fun refreshUsbAutoTargets(
+        repository: RuleRepository,
+        storedRules: List<com.example.phoneproxy.model.ProxyRule>,
+    ): UsbTetherRuleResolution {
+        val resolution = UsbTetherTargetResolver.applyToRules(storedRules)
+        if (resolution.changed) {
+            repository.saveRules(resolution.rules)
+        }
+        return resolution
+    }
+
+    private fun ensureUsbAutoMonitor(
+        repository: RuleRepository,
+        initialResolution: UsbTetherRuleResolution,
+    ) {
+        usbAutoMonitorJob?.cancel()
+        if (initialResolution.autoRuleCount <= 0) {
+            usbAutoMonitorJob = null
+            return
+        }
+        usbAutoMonitorJob = serviceScope.launch {
+            var lastKnownTargetIp = initialResolution.resolvedTarget?.targetIp
+            while (true) {
+                delay(USB_AUTO_REFRESH_INTERVAL_MS)
+                actionMutex.withLock {
+                    val storedRules = repository.loadRules()
+                    val resolution = refreshUsbAutoTargets(repository, storedRules)
+                    val currentTargetIp = resolution.resolvedTarget?.targetIp
+                    if (resolution.changed || currentTargetIp != lastKnownTargetIp) {
+                        engine.start(resolution.rules)
+                        val enabledRuleCount = resolution.rules.count { it.enabled }
+                        notifyForeground(
+                            buildNotification(
+                                buildRunningMessage(enabledRuleCount, resolution)
+                            )
+                        )
+                    }
+                    lastKnownTargetIp = currentTargetIp
+                }
+            }
+        }
+    }
+
     companion object {
         const val ACTION_START = "com.example.phoneproxy.action.START"
         const val ACTION_STOP = "com.example.phoneproxy.action.STOP"
@@ -130,5 +202,6 @@ class PhoneProxyService : Service() {
         private const val CHANNEL_ID = "phone_proxy_runtime"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "PhoneProxyService"
+        private const val USB_AUTO_REFRESH_INTERVAL_MS = 3_000L
     }
 }

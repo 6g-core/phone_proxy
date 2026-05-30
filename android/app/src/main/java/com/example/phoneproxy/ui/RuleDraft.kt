@@ -14,6 +14,7 @@ data class RuleDraft(
     val udpListenPortEnd: String = "",
     val udpTargetPortStart: String = "",
     val udpTargetPortEnd: String = "",
+    val usbTetherAutoTarget: Boolean = false,
     val enabled: Boolean = true,
 ) {
     companion object {
@@ -29,6 +30,7 @@ data class RuleDraft(
                 udpListenPortEnd = rule.udpListenPortEnd?.toString().orEmpty(),
                 udpTargetPortStart = rule.udpTargetPortStart?.toString().orEmpty(),
                 udpTargetPortEnd = rule.udpTargetPortEnd?.toString().orEmpty(),
+                usbTetherAutoTarget = rule.usbTetherAutoTarget,
                 enabled = rule.enabled,
             )
         }
@@ -58,6 +60,7 @@ data class RuleDraft(
                 udpListenPortEnd = parsedUdpRange?.listenEnd,
                 udpTargetPortStart = parsedUdpRange?.targetStart,
                 udpTargetPortEnd = parsedUdpRange?.targetEnd,
+                usbTetherAutoTarget = usbTetherAutoTarget,
                 enabled = enabled,
             )
         )

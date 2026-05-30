@@ -25,7 +25,16 @@ Successful response:
 {
   "success": true,
   "message": "accepted",
-  "text": "你好，请到门口取快递"
+  "text": "你好，请到门口取快递",
+  "speech": {
+    "success": true,
+    "message": "accepted"
+  },
+  "forward": {
+    "success": true,
+    "message": "forwardUrl is blank",
+    "skipped": true
+  }
 }
 ```
 
@@ -73,6 +82,26 @@ curl -X POST http://10.45.0.2:18891/api/v1/exec \
 ```
 
 The `/api/v1/word2voice` response contains separate `speech` and `forward` results. If speech fails, or if forwarding is configured and fails, the endpoint returns a failure response.
+
+Example failure response when forwarding is configured but the downstream request fails:
+
+```json
+{
+  "success": false,
+  "message": "forward failed",
+  "text": "你好，请到门口取快递",
+  "speech": {
+    "success": true,
+    "message": "accepted"
+  },
+  "forward": {
+    "success": false,
+    "message": "HTTP 500 from forwardUrl",
+    "statusCode": 500,
+    "skipped": false
+  }
+}
+```
 
 ## Notes
 

@@ -1,5 +1,6 @@
 package com.example.phonevoice.http
 
+import com.example.phonevoice.config.VoiceEndpointConfig
 import com.example.phonevoice.config.VoiceRuntimeSettings
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -24,6 +25,25 @@ class WordToVoiceRequestHandlerTest {
         assertTrue(JSONObject(result.body).getBoolean("success"))
         assertTrue(JSONObject(result.body).getJSONObject("speech").getBoolean("success"))
         assertTrue(JSONObject(result.body).getJSONObject("forward").getBoolean("skipped"))
+    }
+
+    @Test
+    fun `reports accepted text callback after successful speech`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val acceptedTexts = mutableListOf<String>()
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            onAcceptedText = { acceptedTexts += it },
+        )
+
+        val result = handler.handle(
+            method = "POST",
+            path = "/api/v1/word2voice",
+            body = """{"text":"请到门口取快递"}""",
+        )
+
+        assertEquals(200, result.statusCode)
+        assertEquals(listOf("请到门口取快递"), acceptedTexts)
     }
 
     @Test
@@ -138,6 +158,21 @@ class WordToVoiceRequestHandlerTest {
     }
 
     @Test
+    fun `rejects invalid json body`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val handler = WordToVoiceRequestHandler(dispatcher)
+
+        val result = handler.handle(
+            method = "POST",
+            path = "/api/v1/word2voice",
+            body = """{"text":"missing quote}""",
+        )
+
+        assertEquals(400, result.statusCode)
+        assertEquals("invalid json body", JSONObject(result.body).getString("message"))
+    }
+
+    @Test
     fun `rejects a blank text payload`() {
         val dispatcher = FakeSpeechDispatcher(ready = true)
         val handler = WordToVoiceRequestHandler(dispatcher)
@@ -150,6 +185,22 @@ class WordToVoiceRequestHandlerTest {
 
         assertEquals(400, result.statusCode)
         assertEquals("text must not be blank", JSONObject(result.body).getString("message"))
+    }
+
+    @Test
+    fun `rejects text larger than the endpoint limit`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val handler = WordToVoiceRequestHandler(dispatcher)
+        val tooLongText = "a".repeat(VoiceEndpointConfig.MAX_TEXT_LENGTH + 1)
+
+        val result = handler.handle(
+            method = "POST",
+            path = "/api/v1/word2voice",
+            body = JSONObject().put("text", tooLongText).toString(),
+        )
+
+        assertEquals(400, result.statusCode)
+        assertEquals("text exceeds max length", JSONObject(result.body).getString("message"))
     }
 
     @Test

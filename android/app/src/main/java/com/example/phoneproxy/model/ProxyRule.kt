@@ -13,6 +13,7 @@ data class ProxyRule(
     val udpListenPortEnd: Int? = null,
     val udpTargetPortStart: Int? = null,
     val udpTargetPortEnd: Int? = null,
+    val usbTetherAutoTarget: Boolean = false,
     val enabled: Boolean = true,
 )
 
