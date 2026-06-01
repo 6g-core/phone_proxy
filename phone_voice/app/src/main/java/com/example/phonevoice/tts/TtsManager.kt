@@ -2,11 +2,14 @@ package com.example.phonevoice.tts
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
 import com.example.phonevoice.http.SpeechDispatcher
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 class TtsManager(
     context: Context,
@@ -18,6 +21,7 @@ class TtsManager(
     private var preferredChineseVoice: Voice? = null
     private var defaultLocale: Locale? = null
     private var defaultVoice: Voice? = null
+    private val utteranceStartedAt = ConcurrentHashMap<String, Long>()
 
     @Volatile
     private var ready = false
@@ -36,6 +40,7 @@ class TtsManager(
             return
         }
 
+        engine.setOnUtteranceProgressListener(createProgressListener())
         defaultLocale = engine.defaultVoice?.locale ?: Locale.getDefault()
         defaultVoice = engine.voice
         preferredChineseLocale = resolveChineseLocale(engine)
@@ -63,13 +68,26 @@ class TtsManager(
         if (!configured) {
             Log.w(TAG, "Failed to configure TTS profile before speaking text.")
         }
+        val utteranceId = UUID.randomUUID().toString()
+        val startedAt = System.nanoTime()
+        utteranceStartedAt[utteranceId] = startedAt
+        Log.i(TAG, "starting TTS speak utteranceId=$utteranceId textChars=${text.length}")
         val result = engine.speak(
             text,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            UUID.randomUUID().toString(),
+            utteranceId,
         )
-        return result != TextToSpeech.ERROR
+        val accepted = result != TextToSpeech.ERROR
+        Log.i(
+            TAG,
+            "TTS speak request result success=$accepted resultCode=$result " +
+                "elapsedMs=${elapsedMillis(startedAt)}",
+        )
+        if (!accepted) {
+            utteranceStartedAt.remove(utteranceId)
+        }
+        return accepted
     }
 
     fun shutdown() {
@@ -144,6 +162,43 @@ class TtsManager(
         return true
     }
 
+    private fun createProgressListener(): UtteranceProgressListener {
+        return object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                val id = utteranceId ?: return
+                Log.i(TAG, "TTS playback started utteranceId=$id elapsedMs=${elapsedSinceStart(id)}")
+            }
+
+            override fun onDone(utteranceId: String?) {
+                logPlaybackResult(utteranceId, success = true, message = "done")
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                logPlaybackResult(utteranceId, success = false, message = "error")
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                logPlaybackResult(utteranceId, success = false, message = "errorCode=$errorCode")
+            }
+        }
+    }
+
+    private fun logPlaybackResult(utteranceId: String?, success: Boolean, message: String) {
+        val id = utteranceId ?: return
+        val startedAt = utteranceStartedAt.remove(id)
+        val durationMs = startedAt?.let { elapsedMillis(it) } ?: -1
+        Log.i(
+            TAG,
+            "TTS playback result success=$success utteranceId=$id message=$message durationMs=$durationMs",
+        )
+    }
+
+    private fun elapsedSinceStart(utteranceId: String): Long {
+        val startedAt = utteranceStartedAt[utteranceId] ?: return -1
+        return elapsedMillis(startedAt)
+    }
+
     private fun isChineseCharacter(char: Char): Boolean {
         return Character.UnicodeScript.of(char.code) == Character.UnicodeScript.HAN
     }
@@ -151,4 +206,8 @@ class TtsManager(
     companion object {
         private const val TAG = "PhoneVoiceTts"
     }
+}
+
+private fun elapsedMillis(startedAt: Long): Long {
+    return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 }

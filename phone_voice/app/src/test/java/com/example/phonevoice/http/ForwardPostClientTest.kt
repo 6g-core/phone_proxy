@@ -33,6 +33,7 @@ class ForwardPostClientTest {
             val result = client.forward(
                 url = "http://127.0.0.1:${server.port}/api/v1/exec",
                 timeoutMillis = 3000,
+                body = "{}",
             )
 
             assertTrue(result.success)
@@ -57,6 +58,7 @@ class ForwardPostClientTest {
             val result = client.forward(
                 url = "http://127.0.0.1:${server.port}/api/v1/exec",
                 timeoutMillis = 3000,
+                body = "{}",
             )
 
             assertFalse(result.success)
@@ -79,6 +81,7 @@ class ForwardPostClientTest {
             val result = client.forward(
                 url = "http://127.0.0.1:${server.port}/api/v1/exec",
                 timeoutMillis = 100,
+                body = "{}",
             )
 
             assertFalse(result.success)

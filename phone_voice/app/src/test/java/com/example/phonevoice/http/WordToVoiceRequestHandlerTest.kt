@@ -7,24 +7,36 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class WordToVoiceRequestHandlerTest {
     @Test
-    fun `accepts a valid post request and forwards the text`() {
+    fun `accepts a valid post request and forwards arm body`() {
         val dispatcher = FakeSpeechDispatcher(ready = true)
-        val handler = WordToVoiceRequestHandler(dispatcher)
+        val forwarder = FakeForwarder()
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            settingsProvider = {
+                VoiceRuntimeSettings(forwardUrl = "http://10.45.0.2:18891/api/v1/exec")
+            },
+            forwarder = forwarder,
+        )
 
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"你好，请到门口取快递"}""",
+            body = """{"text":"你好，请到门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(200, result.statusCode)
         assertEquals(listOf("你好，请到门口取快递"), dispatcher.spoken)
+        assertEquals(listOf("""{"target":"yellow bottle"}"""), forwarder.bodies)
         assertTrue(JSONObject(result.body).getBoolean("success"))
         assertTrue(JSONObject(result.body).getJSONObject("speech").getBoolean("success"))
-        assertTrue(JSONObject(result.body).getJSONObject("forward").getBoolean("skipped"))
+        assertTrue(JSONObject(result.body).getJSONObject("forward").getBoolean("success"))
     }
 
     @Test
@@ -39,7 +51,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"请到门口取快递"}""",
+            body = """{"text":"请到门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(200, result.statusCode)
@@ -59,7 +71,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         val payload = JSONObject(result.body)
@@ -91,7 +103,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         val payload = JSONObject(result.body)
@@ -124,10 +136,84 @@ class WordToVoiceRequestHandlerTest {
         handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(listOf(10000), forwarder.timeouts)
+    }
+
+    @Test
+    fun `logs request parsing speech and forwarding timings`() {
+        val dispatcher = FakeSpeechDispatcher(ready = true)
+        val forwarder = FakeForwarder()
+        val logs = Collections.synchronizedList(mutableListOf<String>())
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            settingsProvider = {
+                VoiceRuntimeSettings(forwardUrl = "http://10.45.0.2:18891/api/v1/exec")
+            },
+            forwarder = forwarder,
+            logger = { logs += it },
+        )
+
+        val result = handler.handle(
+            method = "POST",
+            path = "/api/v1/word2voice",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
+        )
+
+        val joinedLogs = logs.joinToString("\n")
+        assertEquals(200, result.statusCode)
+        assertTrue(joinedLogs.contains("received HTTP request"))
+        assertTrue(joinedLogs.contains("parsed request"))
+        assertTrue(joinedLogs.contains("starting speech"))
+        assertTrue(joinedLogs.contains("speech result"))
+        assertTrue(joinedLogs.contains("starting forward"))
+        assertTrue(joinedLogs.contains("forward result"))
+        assertTrue(joinedLogs.contains("elapsedMs="))
+    }
+
+    @Test
+    fun `starts forwarding before speech finishes`() {
+        val speechStarted = CountDownLatch(1)
+        val releaseSpeech = CountDownLatch(1)
+        val forwardStarted = CountDownLatch(1)
+        val dispatcher = BlockingSpeechDispatcher(
+            speechStarted = speechStarted,
+            releaseSpeech = releaseSpeech,
+        )
+        val forwarder = FakeForwarder(onForward = { forwardStarted.countDown() })
+        val forwardExecutor = Executors.newSingleThreadExecutor()
+        val requestExecutor = Executors.newSingleThreadExecutor()
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = dispatcher,
+            settingsProvider = {
+                VoiceRuntimeSettings(forwardUrl = "http://10.45.0.2:18891/api/v1/exec")
+            },
+            forwarder = forwarder,
+            forwardExecutor = forwardExecutor,
+        )
+
+        val resultFuture = requestExecutor.submit<HttpResult> {
+            handler.handle(
+                method = "POST",
+                path = "/api/v1/word2voice",
+                body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
+            )
+        }
+
+        try {
+            assertTrue(speechStarted.await(1, TimeUnit.SECONDS))
+            assertTrue(forwardStarted.await(1, TimeUnit.SECONDS))
+            assertFalse(resultFuture.isDone)
+
+            releaseSpeech.countDown()
+            assertEquals(200, resultFuture.get(2, TimeUnit.SECONDS).statusCode)
+        } finally {
+            releaseSpeech.countDown()
+            requestExecutor.shutdownNow()
+            forwardExecutor.shutdownNow()
+        }
     }
 
     @Test
@@ -145,7 +231,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         val payload = JSONObject(result.body)
@@ -153,8 +239,8 @@ class WordToVoiceRequestHandlerTest {
         assertFalse(payload.getBoolean("success"))
         assertEquals("speech failed", payload.getString("message"))
         assertFalse(payload.getJSONObject("speech").getBoolean("success"))
-        assertTrue(payload.getJSONObject("forward").getBoolean("skipped"))
-        assertTrue(forwarder.urls.isEmpty())
+        assertFalse(payload.getJSONObject("forward").getBoolean("skipped"))
+        assertEquals(listOf("http://10.45.0.2:18891/api/v1/exec"), forwarder.urls)
     }
 
     @Test
@@ -196,7 +282,10 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = JSONObject().put("text", tooLongText).toString(),
+            body = JSONObject()
+                .put("text", tooLongText)
+                .put("arm_body", JSONObject().put("target", "yellow bottle"))
+                .toString(),
         )
 
         assertEquals(400, result.statusCode)
@@ -211,7 +300,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/api/v1/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(503, result.statusCode)
@@ -240,7 +329,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/wrong",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(404, result.statusCode)
@@ -257,7 +346,7 @@ class WordToVoiceRequestHandlerTest {
         val result = handler.handle(
             method = "POST",
             path = "/custom/word2voice",
-            body = """{"text":"门口取快递"}""",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
         )
 
         assertEquals(200, result.statusCode)
@@ -278,16 +367,34 @@ class WordToVoiceRequestHandlerTest {
         }
     }
 
+    private class BlockingSpeechDispatcher(
+        private val speechStarted: CountDownLatch,
+        private val releaseSpeech: CountDownLatch,
+    ) : SpeechDispatcher {
+        override fun isReady(): Boolean = true
+
+        override fun speak(text: String): Boolean {
+            speechStarted.countDown()
+            releaseSpeech.await(2, TimeUnit.SECONDS)
+            return true
+        }
+    }
+
     private class FakeForwarder(
         private val result: ForwardResult = ForwardResult(success = true, message = "HTTP 204"),
+        private val onForward: () -> Unit = {},
     ) : Forwarder {
         val urls = mutableListOf<String>()
 
         val timeouts = mutableListOf<Int>()
 
-        override fun forward(url: String, timeoutMillis: Int): ForwardResult {
+        val bodies = mutableListOf<String>()
+
+        override fun forward(url: String, timeoutMillis: Int, body: String): ForwardResult {
+            onForward()
             urls += url
             timeouts += timeoutMillis
+            bodies += body
             return result
         }
     }
