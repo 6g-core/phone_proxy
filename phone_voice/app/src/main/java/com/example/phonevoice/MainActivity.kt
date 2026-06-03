@@ -1,9 +1,13 @@
 package com.example.phonevoice
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -46,10 +50,14 @@ import com.example.phonevoice.service.VoiceHttpForegroundService
 import com.example.phonevoice.state.VoiceUiState
 
 class MainActivity : ComponentActivity() {
+    private val batteryOptimizationIgnoredState = mutableStateOf(true)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshBatteryOptimizationState()
         setContent {
             val state by VoiceHttpForegroundService.sharedStateStore.state.collectAsStateWithLifecycle()
+            val batteryOptimizationIgnored by batteryOptimizationIgnoredState
             val settingsRepository = remember { VoiceSettingsRepository(this@MainActivity) }
             val initialSettings = remember { settingsRepository.load() }
             var listenUrl by remember { mutableStateOf(initialSettings.listenUrl) }
@@ -76,9 +84,13 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     VoiceScreen(
                         state = state,
+                        batteryOptimizationIgnored = batteryOptimizationIgnored,
                         listenUrl = listenUrl,
                         forwardUrl = forwardUrl,
                         forwardTimeoutMillis = forwardTimeoutMillis,
+                        onRequestBatteryOptimization = {
+                            requestIgnoreBatteryOptimizations()
+                        },
                         onListenUrlChange = { value ->
                             listenUrl = value
                             settingsRepository.save(
@@ -136,14 +148,56 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryOptimizationState()
+    }
+
+    private fun refreshBatteryOptimizationState() {
+        batteryOptimizationIgnoredState.value = isIgnoringBatteryOptimizations()
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        } else {
+            true
+        }
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || isIgnoringBatteryOptimizations()) {
+            refreshBatteryOptimizationState()
+            return
+        }
+
+        val packageUri = Uri.parse("package:$packageName")
+        val openedRequest = startActivitySafely(
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri),
+        )
+        if (!openedRequest) {
+            startActivitySafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+        refreshBatteryOptimizationState()
+    }
+
+    private fun startActivitySafely(intent: Intent): Boolean {
+        return runCatching {
+            startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
 }
 
 @Composable
 private fun VoiceScreen(
     state: VoiceUiState,
+    batteryOptimizationIgnored: Boolean,
     listenUrl: String,
     forwardUrl: String,
     forwardTimeoutMillis: String,
+    onRequestBatteryOptimization: () -> Unit,
     onListenUrlChange: (String) -> Unit,
     onForwardUrlChange: (String) -> Unit,
     onForwardTimeoutMillisChange: (String) -> Unit,
@@ -203,6 +257,18 @@ private fun VoiceScreen(
                 StatusRow(label = "Status", value = state.status.name)
                 StatusRow(label = "Listen URL", value = state.lanUrl)
                 StatusRow(label = "TTS Ready", value = state.ttsReady.toString())
+                StatusRow(
+                    label = "Battery Optimization",
+                    value = if (batteryOptimizationIgnored) "Exempted" else "Needs exemption",
+                )
+                if (!batteryOptimizationIgnored) {
+                    OutlinedButton(
+                        onClick = onRequestBatteryOptimization,
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text("Allow Background")
+                    }
+                }
                 StatusRow(
                     label = "Last Text",
                     value = state.lastText.ifBlank { "None" },

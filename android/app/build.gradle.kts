@@ -75,6 +75,7 @@ dependencies {
     add("implementation", "androidx.compose.ui:ui-tooling-preview")
     add("implementation", "androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     add("implementation", "androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    add("implementation", "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     add("debugImplementation", "androidx.compose.ui:ui-tooling")
     add("debugImplementation", "androidx.compose.ui:ui-test-manifest")

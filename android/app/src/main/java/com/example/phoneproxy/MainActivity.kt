@@ -1,9 +1,17 @@
 package com.example.phoneproxy
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,16 +64,23 @@ import com.example.phoneproxy.ui.RuleDraft
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+    private val batteryOptimizationIgnoredState = mutableStateOf(true)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshBatteryOptimizationState()
         val repository = RuleRepository(applicationContext)
         applyDebugIntent(intent, repository)
         setContent {
             MaterialTheme {
+                val batteryOptimizationIgnored by batteryOptimizationIgnoredState
                 val rules = remember { mutableStateListOf<ProxyRule>().apply { addAll(repository.loadRules()) } }
                 var editingDraft by remember { mutableStateOf<RuleDraft?>(null) }
                 var editingRuleId by remember { mutableStateOf<String?>(null) }
                 var errorMessage by remember { mutableStateOf<String?>(null) }
+                val notificationLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                ) { }
                 val runtimeStatus by PhoneProxyRuntime.status.collectAsState()
                 val usbTetherTarget by produceState<UsbTetherTarget?>(initialValue = UsbTetherTargetResolver.resolve()) {
                     while (true) {
@@ -73,11 +89,26 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+
                 PhoneProxyScreen(
                     rules = rules,
                     usbTetherTarget = usbTetherTarget,
                     isServiceRunning = runtimeStatus.isRunning,
                     serviceMessage = runtimeStatus.message,
+                    batteryOptimizationIgnored = batteryOptimizationIgnored,
+                    onRequestBatteryOptimization = {
+                        requestIgnoreBatteryOptimizations()
+                    },
                     onToggleService = { shouldRun ->
                         dispatchServiceAction(
                             if (shouldRun) PhoneProxyService.ACTION_START else PhoneProxyService.ACTION_STOP
@@ -195,6 +226,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryOptimizationState()
+    }
+
     private fun reloadServiceIfRunning(isRunning: Boolean) {
         if (!isRunning) {
             return
@@ -210,6 +246,41 @@ class MainActivity : ComponentActivity() {
             PhoneProxyService.ACTION_STOP -> startService(intent)
             else -> ContextCompat.startForegroundService(this, intent)
         }
+    }
+
+    private fun refreshBatteryOptimizationState() {
+        batteryOptimizationIgnoredState.value = isIgnoringBatteryOptimizations()
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        } else {
+            true
+        }
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || isIgnoringBatteryOptimizations()) {
+            refreshBatteryOptimizationState()
+            return
+        }
+
+        val packageUri = Uri.parse("package:$packageName")
+        val openedRequest = startActivitySafely(
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri),
+        )
+        if (!openedRequest) {
+            startActivitySafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+        refreshBatteryOptimizationState()
+    }
+
+    private fun startActivitySafely(intent: Intent): Boolean {
+        return runCatching {
+            startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     private fun applyDebugIntent(intent: Intent?, repository: RuleRepository) {
@@ -234,6 +305,8 @@ private fun PhoneProxyScreen(
     usbTetherTarget: UsbTetherTarget?,
     isServiceRunning: Boolean,
     serviceMessage: String,
+    batteryOptimizationIgnored: Boolean,
+    onRequestBatteryOptimization: () -> Unit,
     onToggleService: (Boolean) -> Unit,
     onAddRule: () -> Unit,
     onEditRule: (ProxyRule) -> Unit,
@@ -281,6 +354,15 @@ private fun PhoneProxyScreen(
                         Text("Service Status", style = MaterialTheme.typography.titleMedium)
                         Text(if (isServiceRunning) "Running" else "Stopped")
                         Text(serviceMessage)
+                        Text(
+                            "Battery Optimization: " +
+                                if (batteryOptimizationIgnored) "Exempted" else "Needs exemption",
+                        )
+                        if (!batteryOptimizationIgnored) {
+                            Button(onClick = onRequestBatteryOptimization) {
+                                Text("Allow Background")
+                            }
+                        }
                     }
                 }
             }

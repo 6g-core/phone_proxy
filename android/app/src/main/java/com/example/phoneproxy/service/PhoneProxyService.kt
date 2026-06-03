@@ -1,12 +1,15 @@
 package com.example.phoneproxy.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import com.example.phoneproxy.data.RuleRepository
 import com.example.phoneproxy.net.UsbTetherRuleResolution
@@ -27,6 +30,7 @@ class PhoneProxyService : Service() {
     private val actionMutex = Mutex()
     private val engine = PhoneProxyEngine()
     private var usbAutoMonitorJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -40,6 +44,8 @@ class PhoneProxyService : Service() {
                     NOTIFICATION_ID,
                     buildNotification("Starting proxy engine...")
                 )
+                acquireWakeLock()
+                logPowerState("start")
                 serviceScope.launch {
                     actionMutex.withLock {
                         val repository = RuleRepository(applicationContext)
@@ -66,6 +72,7 @@ class PhoneProxyService : Service() {
                             Log.e(TAG, "Failed to start proxy engine", exc)
                             usbAutoMonitorJob?.cancel()
                             usbAutoMonitorJob = null
+                            releaseWakeLock()
                             PhoneProxyRuntime.update(
                                 ProxyRuntimeStatus(
                                     isRunning = false,
@@ -86,6 +93,7 @@ class PhoneProxyService : Service() {
                         usbAutoMonitorJob?.cancel()
                         usbAutoMonitorJob = null
                         engine.stop()
+                        releaseWakeLock()
                         stopSelf()
                     }
                 }
@@ -103,6 +111,7 @@ class PhoneProxyService : Service() {
             }
         }
         serviceScope.cancel()
+        releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -114,6 +123,7 @@ class PhoneProxyService : Service() {
             .setContentTitle("Phone Proxy")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            .setOngoing(true)
             .build()
     }
 
@@ -133,6 +143,52 @@ class PhoneProxyService : Service() {
             NotificationManager.IMPORTANCE_LOW,
         )
         manager.createNotificationChannel(channel)
+    }
+
+    private fun acquireWakeLock() {
+        val existingWakeLock = wakeLock
+        if (existingWakeLock?.isHeld == true) {
+            return
+        }
+
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:phone-proxy")
+            .apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        Log.i(TAG, "WakeLock acquired")
+    }
+
+    private fun releaseWakeLock() {
+        val existingWakeLock = wakeLock
+        if (existingWakeLock?.isHeld == true) {
+            existingWakeLock.release()
+            Log.i(TAG, "WakeLock released")
+        }
+        wakeLock = null
+    }
+
+    private fun logPowerState(reason: String) {
+        Log.i(
+            TAG,
+            "powerState reason=$reason ignoringBatteryOptimizations=${isIgnoringBatteryOptimizations()} " +
+                "notificationPermissionGranted=${notificationPermissionGranted()} " +
+                "wakeLockHeld=${wakeLock?.isHeld == true}",
+        )
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        } else {
+            true
+        }
+    }
+
+    private fun notificationPermissionGranted(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun buildRunningMessage(
