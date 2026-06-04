@@ -13,11 +13,12 @@ class VoiceServiceStateStore {
         _state.update { it.copy(status = VoiceServiceStatus.STARTING, lastError = "") }
     }
 
-    fun setRunning(lanUrl: String, ttsReady: Boolean) {
+    fun setRunning(lanUrl: String, forwardLanUrl: String, ttsReady: Boolean) {
         _state.update {
             it.copy(
                 status = VoiceServiceStatus.RUNNING,
                 lanUrl = lanUrl,
+                forwardLanUrl = forwardLanUrl,
                 ttsReady = ttsReady,
                 lastError = "",
             )

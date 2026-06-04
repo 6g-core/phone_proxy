@@ -21,6 +21,7 @@ class VoiceServiceStateStoreTest {
         store.setStarting()
         store.setRunning(
             lanUrl = "http://192.168.1.23:8080/api/v1/word2voice",
+            forwardLanUrl = "http://192.168.1.23:8080/api/v1/word2voice_forward",
             ttsReady = true,
         )
         store.setLastText("你好，请到门口取快递")

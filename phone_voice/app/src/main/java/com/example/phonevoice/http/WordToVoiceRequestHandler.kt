@@ -17,11 +17,13 @@ class WordToVoiceRequestHandler(
     private val settingsProvider: () -> VoiceRuntimeSettings = { VoiceRuntimeSettings() },
     private val forwarder: Forwarder = ForwardPostClient(),
     requestPath: String = VoiceEndpointConfig.PATH,
+    forwardRequestPath: String = VoiceEndpointConfig.FORWARD_PATH,
     private val onAcceptedText: (String) -> Unit = {},
     private val logger: (String) -> Unit = ::logInfo,
     private val forwardExecutor: ExecutorService = DEFAULT_FORWARD_EXECUTOR,
 ) {
     private val requestPath = VoiceEndpointConfig.normalizePath(requestPath)
+    private val forwardRequestPath = VoiceEndpointConfig.normalizePath(forwardRequestPath)
 
     fun handle(method: String, path: String, body: String?): HttpResult {
         val requestStartedAt = System.nanoTime()
@@ -29,7 +31,12 @@ class WordToVoiceRequestHandler(
             "received HTTP request method=$method path=$path bodyBytes=${body.orEmpty().toByteArray().size}",
         )
 
-        if (path != requestPath) {
+        val mode = when (path) {
+            requestPath -> RequestMode.SPEECH_ONLY
+            forwardRequestPath -> RequestMode.SPEECH_AND_FORWARD
+            else -> null
+        }
+        if (mode == null) {
             logger("rejected HTTP request status=404 message=path not found elapsedMs=${elapsedMillis(requestStartedAt)}")
             return error(404, "path not found")
         }
@@ -74,30 +81,39 @@ class WordToVoiceRequestHandler(
             return error(400, "text exceeds max length")
         }
 
-        val armBody = payload.optJSONObject("arm_body")
-            ?: run {
-                logger(
-                    "rejected parsed request status=400 message=arm_body must be a json object " +
-                        "elapsedMs=${elapsedMillis(requestStartedAt)}",
-                )
-                return error(400, "arm_body must be a json object")
-            }
+        val forwardFuture = if (mode == RequestMode.SPEECH_AND_FORWARD) {
+            val armBody = payload.optJSONObject("arm_body")
+                ?: run {
+                    logger(
+                        "rejected parsed request status=400 message=arm_body must be a json object " +
+                            "elapsedMs=${elapsedMillis(requestStartedAt)}",
+                    )
+                    return error(400, "arm_body must be a json object")
+                }
 
-        val settings = settingsProvider()
-        val forwardUrl = settings.normalizedForwardUrl()
-        val forwardTimeoutMillis = settings.normalizedForwardTimeoutMillis()
-        val forwardBody = armBody.toString()
-        logger(
-            "parsed request textChars=${text.length} armBodyBytes=${forwardBody.toByteArray().size} " +
-                "forwardEnabled=${forwardUrl != null} elapsedMs=${elapsedMillis(requestStartedAt)}",
-        )
+            val settings = settingsProvider()
+            val forwardUrl = settings.normalizedForwardUrl()
+            val forwardTimeoutMillis = settings.normalizedForwardTimeoutMillis()
+            val forwardBody = armBody.toString()
+            logger(
+                "parsed request mode=speech_forward textChars=${text.length} " +
+                    "armBodyBytes=${forwardBody.toByteArray().size} forwardEnabled=${forwardUrl != null} " +
+                    "elapsedMs=${elapsedMillis(requestStartedAt)}",
+            )
 
-        val forwardFuture = startForward(
-            url = forwardUrl,
-            timeoutMillis = forwardTimeoutMillis,
-            body = forwardBody,
-            requestStartedAt = requestStartedAt,
-        )
+            startForward(
+                url = forwardUrl,
+                timeoutMillis = forwardTimeoutMillis,
+                body = forwardBody,
+                requestStartedAt = requestStartedAt,
+            )
+        } else {
+            logger(
+                "parsed request mode=speech_only textChars=${text.length} " +
+                    "elapsedMs=${elapsedMillis(requestStartedAt)}",
+            )
+            null
+        }
 
         logger("starting speech textChars=${text.length} elapsedMs=${elapsedMillis(requestStartedAt)}")
         val speechStartedAt = System.nanoTime()
@@ -123,7 +139,11 @@ class WordToVoiceRequestHandler(
             onAcceptedText(text)
         }
 
-        val forwardResult = awaitForward(forwardFuture, requestStartedAt)
+        val forwardResult = if (mode == RequestMode.SPEECH_AND_FORWARD) {
+            awaitForward(forwardFuture, requestStartedAt)
+        } else {
+            ForwardResult.skipped("speech-only endpoint")
+        }
 
         return successOrFailure(
             text = text,
@@ -273,6 +293,11 @@ class WordToVoiceRequestHandler(
         val message: String,
         val elapsedMillis: Long,
     )
+
+    private enum class RequestMode {
+        SPEECH_ONLY,
+        SPEECH_AND_FORWARD,
+    }
 }
 
 private const val TAG = "PhoneVoiceHttp"

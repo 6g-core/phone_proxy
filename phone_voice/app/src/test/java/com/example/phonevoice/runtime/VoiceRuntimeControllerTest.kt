@@ -23,6 +23,10 @@ class VoiceRuntimeControllerTest {
 
         assertEquals(VoiceServiceStatus.RUNNING, store.state.value.status)
         assertEquals("http://192.168.1.23:8080/api/v1/word2voice", store.state.value.lanUrl)
+        assertEquals(
+            "http://192.168.1.23:8080/api/v1/word2voice_forward",
+            store.state.value.forwardLanUrl,
+        )
         assertTrue(store.state.value.ttsReady)
     }
 
@@ -53,6 +57,7 @@ class VoiceRuntimeControllerTest {
             settingsProvider = {
                 VoiceRuntimeSettings(
                     listenUrl = "http://10.45.0.10:18080/custom/word2voice",
+                    speechForwardUrl = "http://10.45.0.10:18080/custom/word2voice_forward",
                     forwardUrl = "http://10.45.0.2:18891/api/v1/exec",
                 )
             },
@@ -65,7 +70,15 @@ class VoiceRuntimeControllerTest {
         controller.start()
 
         assertEquals("http://10.45.0.10:18080/custom/word2voice", store.state.value.lanUrl)
+        assertEquals(
+            "http://10.45.0.10:18080/custom/word2voice_forward",
+            store.state.value.forwardLanUrl,
+        )
         assertEquals("http://10.45.0.10:18080/custom/word2voice", settingsSeenByServer?.listenUrl)
+        assertEquals(
+            "http://10.45.0.10:18080/custom/word2voice_forward",
+            settingsSeenByServer?.speechForwardUrl,
+        )
         assertEquals(
             "http://10.45.0.2:18891/api/v1/exec",
             settingsSeenByServer?.forwardUrl,

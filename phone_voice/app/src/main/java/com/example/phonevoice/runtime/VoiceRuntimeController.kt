@@ -19,6 +19,7 @@ class VoiceRuntimeController(
             val settings = activeSettings ?: settingsProvider()
             stateStore.setRunning(
                 lanUrl = settings.displayUrl(lanIpProvider()),
+                forwardLanUrl = settings.displaySpeechForwardUrl(lanIpProvider()),
                 ttsReady = dispatcher.isReady(),
             )
             return
@@ -33,6 +34,7 @@ class VoiceRuntimeController(
             activeSettings = settings
             stateStore.setRunning(
                 lanUrl = settings.displayUrl(lanIpProvider()),
+                forwardLanUrl = settings.displaySpeechForwardUrl(lanIpProvider()),
                 ttsReady = dispatcher.isReady(),
             )
         } catch (t: Throwable) {

@@ -52,6 +52,7 @@ class VoiceHttpForegroundService : Service() {
                         settingsProvider = { settingsRepository.load() },
                         forwarder = ForwardPostClient(),
                         requestPath = settings.normalizedListenPath(),
+                        forwardRequestPath = settings.normalizedSpeechForwardPath(),
                         onAcceptedText = { text -> stateStore.setLastText(text) },
                     ),
                     listenHost = settings.normalizedListenHost(),

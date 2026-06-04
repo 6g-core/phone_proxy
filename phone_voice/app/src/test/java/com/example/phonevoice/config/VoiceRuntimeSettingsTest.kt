@@ -14,6 +14,10 @@ class VoiceRuntimeSettingsTest {
             "http://192.168.1.23:8080/api/v1/word2voice",
             settings.displayUrl(defaultHost = "192.168.1.23"),
         )
+        assertEquals(
+            "http://192.168.1.23:8080/api/v1/word2voice_forward",
+            settings.displaySpeechForwardUrl(defaultHost = "192.168.1.23"),
+        )
         assertNull(settings.normalizedListenHost())
     }
 
@@ -31,6 +35,7 @@ class VoiceRuntimeSettingsTest {
         assertEquals("10.45.0.10", settings.normalizedListenHost())
         assertEquals(18080, settings.normalizedListenPort())
         assertEquals("/custom/word2voice", settings.normalizedListenPath())
+        assertEquals("/api/v1/word2voice_forward", settings.normalizedSpeechForwardPath())
     }
 
     @Test
@@ -43,6 +48,35 @@ class VoiceRuntimeSettingsTest {
         )
         assertEquals(8080, settings.normalizedListenPort())
         assertEquals("/api/v1/word2voice", settings.normalizedListenPath())
+    }
+
+    @Test
+    fun `uses configured speech forward url path on the listen endpoint`() {
+        val settings = VoiceRuntimeSettings(
+            listenUrl = "http://10.45.0.10:18080/custom/word2voice",
+            speechForwardUrl = "http://10.45.0.11:19090/custom/word2voice_forward",
+        )
+
+        assertEquals("/custom/word2voice_forward", settings.normalizedSpeechForwardPath())
+        assertEquals(
+            "http://10.45.0.10:18080/custom/word2voice_forward",
+            settings.displaySpeechForwardUrl(defaultHost = "192.168.1.23"),
+        )
+    }
+
+    @Test
+    fun `fills default speech forward path when configured url omits it`() {
+        val settings = VoiceRuntimeSettings(speechForwardUrl = "http://10.45.0.10")
+
+        assertEquals(
+            "http://10.45.0.10:8080/api/v1/word2voice",
+            settings.displayUrl(defaultHost = "192.168.1.23"),
+        )
+        assertEquals("/api/v1/word2voice_forward", settings.normalizedSpeechForwardPath())
+        assertEquals(
+            "http://10.45.0.10:8080/api/v1/word2voice_forward",
+            settings.displaySpeechForwardUrl(defaultHost = "192.168.1.23"),
+        )
     }
 
     @Test

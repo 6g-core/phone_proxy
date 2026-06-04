@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
             val settingsRepository = remember { VoiceSettingsRepository(this@MainActivity) }
             val initialSettings = remember { settingsRepository.load() }
             var listenUrl by remember { mutableStateOf(initialSettings.listenUrl) }
+            var speechForwardUrl by remember { mutableStateOf(initialSettings.speechForwardUrl) }
             var forwardUrl by remember { mutableStateOf(initialSettings.forwardUrl) }
             var forwardTimeoutMillis by remember {
                 mutableStateOf(initialSettings.normalizedForwardTimeoutMillis().toString())
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         batteryOptimizationIgnored = batteryOptimizationIgnored,
                         listenUrl = listenUrl,
+                        speechForwardUrl = speechForwardUrl,
                         forwardUrl = forwardUrl,
                         forwardTimeoutMillis = forwardTimeoutMillis,
                         onRequestBatteryOptimization = {
@@ -96,6 +98,19 @@ class MainActivity : ComponentActivity() {
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
                                     listenUrl = value,
+                                    speechForwardUrl = speechForwardUrl,
+                                    forwardUrl = forwardUrl,
+                                    forwardTimeoutMillis = VoiceRuntimeSettings
+                                        .parseForwardTimeoutMillis(forwardTimeoutMillis),
+                                ),
+                            )
+                        },
+                        onSpeechForwardUrlChange = { value ->
+                            speechForwardUrl = value
+                            settingsRepository.save(
+                                VoiceRuntimeSettings(
+                                    listenUrl = listenUrl,
+                                    speechForwardUrl = value,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -107,6 +122,7 @@ class MainActivity : ComponentActivity() {
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
                                     listenUrl = listenUrl,
+                                    speechForwardUrl = speechForwardUrl,
                                     forwardUrl = value,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -118,6 +134,7 @@ class MainActivity : ComponentActivity() {
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
                                     listenUrl = listenUrl,
+                                    speechForwardUrl = speechForwardUrl,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(value),
@@ -128,6 +145,7 @@ class MainActivity : ComponentActivity() {
                             settingsRepository.save(
                                 VoiceRuntimeSettings(
                                     listenUrl = listenUrl,
+                                    speechForwardUrl = speechForwardUrl,
                                     forwardUrl = forwardUrl,
                                     forwardTimeoutMillis = VoiceRuntimeSettings
                                         .parseForwardTimeoutMillis(forwardTimeoutMillis),
@@ -195,10 +213,12 @@ private fun VoiceScreen(
     state: VoiceUiState,
     batteryOptimizationIgnored: Boolean,
     listenUrl: String,
+    speechForwardUrl: String,
     forwardUrl: String,
     forwardTimeoutMillis: String,
     onRequestBatteryOptimization: () -> Unit,
     onListenUrlChange: (String) -> Unit,
+    onSpeechForwardUrlChange: (String) -> Unit,
     onForwardUrlChange: (String) -> Unit,
     onForwardTimeoutMillisChange: (String) -> Unit,
     onStart: () -> Unit,
@@ -255,7 +275,8 @@ private fun VoiceScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatusRow(label = "Status", value = state.status.name)
-                StatusRow(label = "Listen URL", value = state.lanUrl)
+                StatusRow(label = "Speech URL", value = state.lanUrl)
+                StatusRow(label = "Speech + Forward URL", value = state.forwardLanUrl)
                 StatusRow(label = "TTS Ready", value = state.ttsReady.toString())
                 StatusRow(
                     label = "Battery Optimization",
@@ -300,7 +321,15 @@ private fun VoiceScreen(
                     onValueChange = onListenUrlChange,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Listen URL") },
+                    label = { Text("Speech URL") },
+                    placeholder = { Text("Auto LAN URL") },
+                )
+                OutlinedTextField(
+                    value = speechForwardUrl,
+                    onValueChange = onSpeechForwardUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Speech + Forward URL") },
                     placeholder = { Text("Auto LAN URL") },
                 )
                 OutlinedTextField(
@@ -308,7 +337,7 @@ private fun VoiceScreen(
                     onValueChange = onForwardUrlChange,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Forward URL") },
+                    label = { Text("Forward Target URL") },
                     placeholder = { Text("Disabled") },
                 )
                 OutlinedTextField(
@@ -352,7 +381,7 @@ private fun VoiceScreen(
                 .padding(18.dp),
         ) {
             Text(
-                text = "Send POST JSON to /api/v1/word2voice with text and arm_body fields. The phone will speak text and forward arm_body when forwarding is enabled.",
+                text = "Send POST JSON with text to the speech URL. Send text and arm_body to the speech + forward URL when forwarding is needed.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF2D3748),
             )

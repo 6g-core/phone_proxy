@@ -31,6 +31,25 @@ class WordToVoiceServerTest {
     }
 
     @Test
+    fun `maps the forward handler path to a 200 response`() {
+        val handler = WordToVoiceRequestHandler(
+            dispatcher = object : SpeechDispatcher {
+                override fun isReady(): Boolean = true
+                override fun speak(text: String): Boolean = true
+            },
+        )
+        val server = WordToVoiceServer(handler)
+
+        val response = server.serveBody(
+            method = "POST",
+            path = "/api/v1/word2voice_forward",
+            body = """{"text":"门口取快递","arm_body":{"target":"yellow bottle"}}""",
+        )
+
+        assertEquals(NanoHTTPD.Response.Status.OK, response.status)
+    }
+
+    @Test
     fun `maps a wrong method to a 405 response`() {
         val handler = WordToVoiceRequestHandler(
             dispatcher = object : SpeechDispatcher {
