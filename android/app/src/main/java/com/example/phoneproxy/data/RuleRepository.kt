@@ -37,6 +37,14 @@ class RuleRepository(context: Context) {
         return rules
     }
 
+    fun loadGlobalUsbAutoEnabled(): Boolean {
+        return prefs.getBoolean(KEY_GLOBAL_USB_AUTO_ENABLED, false)
+    }
+
+    fun saveGlobalUsbAutoEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GLOBAL_USB_AUTO_ENABLED, enabled).apply()
+    }
+
     private fun ProxyRule.toJson(): JSONObject {
         return JSONObject()
             .put("id", id)
@@ -80,5 +88,6 @@ class RuleRepository(context: Context) {
 
     companion object {
         private const val KEY_RULES = "rules_json"
+        private const val KEY_GLOBAL_USB_AUTO_ENABLED = "global_usb_auto_enabled"
     }
 }

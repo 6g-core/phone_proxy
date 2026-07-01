@@ -14,8 +14,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -31,6 +32,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -78,6 +80,11 @@ class MainActivity : ComponentActivity() {
                 var editingDraft by remember { mutableStateOf<RuleDraft?>(null) }
                 var editingRuleId by remember { mutableStateOf<String?>(null) }
                 var errorMessage by remember { mutableStateOf<String?>(null) }
+                var globalUsbAutoEnabled by remember {
+                    mutableStateOf(repository.loadGlobalUsbAutoEnabled())
+                }
+                var deleteModeEnabled by remember { mutableStateOf(false) }
+                var selectedRuleIds by remember { mutableStateOf(emptySet<String>()) }
                 val notificationLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),
                 ) { }
@@ -103,6 +110,9 @@ class MainActivity : ComponentActivity() {
                 PhoneProxyScreen(
                     rules = rules,
                     usbTetherTarget = usbTetherTarget,
+                    globalUsbAutoEnabled = globalUsbAutoEnabled,
+                    deleteModeEnabled = deleteModeEnabled,
+                    selectedRuleIds = selectedRuleIds,
                     isServiceRunning = runtimeStatus.isRunning,
                     serviceMessage = runtimeStatus.message,
                     batteryOptimizationIgnored = batteryOptimizationIgnored,
@@ -130,36 +140,12 @@ class MainActivity : ComponentActivity() {
                         editingRuleId = rule.id
                         errorMessage = null
                     },
-                    onDeleteRule = { rule ->
-                        rules.removeAll { it.id == rule.id }
-                        repository.saveRules(rules)
-                        reloadServiceIfRunning(runtimeStatus.isRunning)
-                    },
                     onToggleRule = { rule, enabled ->
                         val index = rules.indexOfFirst { it.id == rule.id }
                         if (index >= 0) {
-                            val updated = rules[index].copy(enabled = enabled)
-                            val error = updated.validateAgainst(rules.filter { it.id != rule.id })
-                            if (error == null) {
-                                rules[index] = updated
-                                repository.saveRules(rules)
-                                reloadServiceIfRunning(runtimeStatus.isRunning)
-                            } else {
-                                errorMessage = error
-                            }
-                        }
-                    },
-                    onToggleUsbAutoTarget = { rule, enabled ->
-                        val index = rules.indexOfFirst { it.id == rule.id }
-                        if (index >= 0) {
-                            val resolvedTargetIp = usbTetherTarget?.targetIp
                             val updated = rules[index].copy(
-                                usbTetherAutoTarget = enabled,
-                                targetIp = if (enabled && !resolvedTargetIp.isNullOrBlank()) {
-                                    resolvedTargetIp
-                                } else {
-                                    rules[index].targetIp
-                                },
+                                enabled = enabled,
+                                usbTetherAutoTarget = false,
                             )
                             val error = updated.validateAgainst(rules.filter { it.id != rule.id })
                             if (error == null) {
@@ -171,12 +157,50 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    onToggleGlobalUsbAuto = { enabled ->
+                        globalUsbAutoEnabled = enabled
+                        repository.saveGlobalUsbAutoEnabled(enabled)
+                        if (enabled && usbTetherTarget != null) {
+                            val resolvedTargetIp = usbTetherTarget!!.targetIp
+                            val updatedRules = rules.map { rule ->
+                                rule.copy(
+                                    targetIp = resolvedTargetIp,
+                                    usbTetherAutoTarget = false,
+                                )
+                            }
+                            rules.clear()
+                            rules.addAll(updatedRules)
+                            repository.saveRules(updatedRules)
+                        }
+                        reloadServiceIfRunning(runtimeStatus.isRunning)
+                    },
+                    onToggleDeleteMode = { enabled ->
+                        deleteModeEnabled = enabled
+                        if (!enabled) {
+                            selectedRuleIds = emptySet()
+                        }
+                    },
+                    onToggleDeleteSelection = { ruleId, selected ->
+                        selectedRuleIds = if (selected) {
+                            selectedRuleIds + ruleId
+                        } else {
+                            selectedRuleIds - ruleId
+                        }
+                    },
+                    onConfirmDeleteSelected = {
+                        if (selectedRuleIds.isNotEmpty()) {
+                            rules.removeAll { it.id in selectedRuleIds }
+                            repository.saveRules(rules)
+                            selectedRuleIds = emptySet()
+                            deleteModeEnabled = false
+                            reloadServiceIfRunning(runtimeStatus.isRunning)
+                        }
+                    },
                 )
 
                 editingDraft?.let { draft ->
                     RuleEditorDialog(
                         draft = draft,
-                        usbTetherTarget = usbTetherTarget,
                         errorMessage = errorMessage,
                         onDismiss = {
                             editingDraft = null
@@ -188,13 +212,14 @@ class MainActivity : ComponentActivity() {
                             if (draftResult.isFailure) {
                                 errorMessage = draftResult.exceptionOrNull()?.message
                             } else {
-                                val rule = draftResult.getOrThrow().let { candidate ->
-                                    if (candidate.usbTetherAutoTarget && usbTetherTarget != null) {
-                                        candidate.copy(targetIp = usbTetherTarget!!.targetIp)
+                                val rule = draftResult.getOrThrow().copy(
+                                    usbTetherAutoTarget = false,
+                                    targetIp = if (globalUsbAutoEnabled && usbTetherTarget != null) {
+                                        usbTetherTarget!!.targetIp
                                     } else {
-                                        candidate
-                                    }
-                                }
+                                        draftResult.getOrThrow().targetIp
+                                    },
+                                )
                                 val validatedRule = if (editingRuleId == null) {
                                     rule
                                 } else {
@@ -298,11 +323,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PhoneProxyScreen(
     rules: List<ProxyRule>,
     usbTetherTarget: UsbTetherTarget?,
+    globalUsbAutoEnabled: Boolean,
+    deleteModeEnabled: Boolean,
+    selectedRuleIds: Set<String>,
     isServiceRunning: Boolean,
     serviceMessage: String,
     batteryOptimizationIgnored: Boolean,
@@ -310,9 +338,11 @@ private fun PhoneProxyScreen(
     onToggleService: (Boolean) -> Unit,
     onAddRule: () -> Unit,
     onEditRule: (ProxyRule) -> Unit,
-    onDeleteRule: (ProxyRule) -> Unit,
     onToggleRule: (ProxyRule, Boolean) -> Unit,
-    onToggleUsbAutoTarget: (ProxyRule, Boolean) -> Unit,
+    onToggleGlobalUsbAuto: (Boolean) -> Unit,
+    onToggleDeleteMode: (Boolean) -> Unit,
+    onToggleDeleteSelection: (String, Boolean) -> Unit,
+    onConfirmDeleteSelected: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -366,8 +396,61 @@ private fun PhoneProxyScreen(
                     }
                 }
             }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("Rule Controls", style = MaterialTheme.typography.titleMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Auto")
+                                Text(
+                                    if (globalUsbAutoEnabled) {
+                                        usbTetherTarget?.let {
+                                            "${it.interfaceName}: ${it.sourceIp} -> ${it.targetIp}"
+                                        } ?: "USB tether interface not detected"
+                                    } else {
+                                        "Use saved target IPs"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Switch(
+                                checked = globalUsbAutoEnabled,
+                                onCheckedChange = onToggleGlobalUsbAuto,
+                            )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (deleteModeEnabled) {
+                                Button(
+                                    onClick = onConfirmDeleteSelected,
+                                    enabled = selectedRuleIds.isNotEmpty(),
+                                ) {
+                                    Text("Delete (${selectedRuleIds.size})")
+                                }
+                                OutlinedButton(onClick = { onToggleDeleteMode(false) }) {
+                                    Text("Cancel")
+                                }
+                            } else {
+                                OutlinedButton(onClick = { onToggleDeleteMode(true) }) {
+                                    Text("Delete")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             items(rules, key = { it.id }) { rule ->
-                val effectiveTargetIp = if (rule.usbTetherAutoTarget) {
+                val effectiveTargetIp = if (globalUsbAutoEnabled) {
                     usbTetherTarget?.targetIp ?: rule.targetIp
                 } else {
                     rule.targetIp
@@ -377,13 +460,34 @@ private fun PhoneProxyScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(rule.name, style = MaterialTheme.typography.titleMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                rule.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (deleteModeEnabled) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text("Select", style = MaterialTheme.typography.bodySmall)
+                                    Checkbox(
+                                        checked = selectedRuleIds.contains(rule.id),
+                                        onCheckedChange = { onToggleDeleteSelection(rule.id, it) },
+                                    )
+                                }
+                            }
+                        }
                         Text("TCP: ${rule.listenIp}:${rule.listenPort} -> $effectiveTargetIp:${rule.targetPort}")
                         Text(
                             "UDP: ${rule.listenIp}:${rule.udpListenPortLabel()} -> " +
                                 "$effectiveTargetIp:${rule.udpTargetPortLabel()}"
                         )
-                        if (rule.usbTetherAutoTarget) {
+                        if (globalUsbAutoEnabled) {
                             Text(
                                 usbTetherTarget?.let {
                                     "USB auto: ${it.interfaceName} ${it.sourceIp} -> ${it.targetIp}"
@@ -391,43 +495,22 @@ private fun PhoneProxyScreen(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        Column(
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            RuleToggle(
+                                label = "Enabled",
+                                checked = rule.enabled,
+                                onCheckedChange = { onToggleRule(rule, it) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(
+                                onClick = { onEditRule(rule) },
+                                modifier = Modifier.weight(1f),
                             ) {
-                                RuleToggle(
-                                    label = "Enabled",
-                                    checked = rule.enabled,
-                                    onCheckedChange = { onToggleRule(rule, it) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                RuleToggle(
-                                    label = "Auto",
-                                    checked = rule.usbTetherAutoTarget,
-                                    onCheckedChange = { onToggleUsbAutoTarget(rule, it) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Button(
-                                    onClick = { onEditRule(rule) },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text("Edit")
-                                }
-                                Button(
-                                    onClick = { onDeleteRule(rule) },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text("Delete")
-                                }
+                                Text("Edit")
                             }
                         }
                     }
@@ -440,7 +523,6 @@ private fun PhoneProxyScreen(
 @Composable
 private fun RuleEditorDialog(
     draft: RuleDraft,
-    usbTetherTarget: UsbTetherTarget?,
     errorMessage: String?,
     onDismiss: () -> Unit,
     onDraftChanged: (RuleDraft) -> Unit,
@@ -500,7 +582,6 @@ private fun RuleEditorDialog(
                     label = { Text("Target IP") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = !draft.usbTetherAutoTarget,
                 )
                 OutlinedTextField(
                     value = draft.targetPort,
@@ -509,24 +590,6 @@ private fun RuleEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = draft.usbTetherAutoTarget,
-                        onCheckedChange = { onDraftChanged(draft.copy(usbTetherAutoTarget = it)) },
-                    )
-                    Text("Auto target (.200)")
-                }
-                if (draft.usbTetherAutoTarget) {
-                    Text(
-                        usbTetherTarget?.let {
-                            "Detected ${it.interfaceName}: ${it.sourceIp} -> auto target ${it.targetIp}"
-                        } ?: "USB tether interface not detected. The rule will keep its saved target IP until USB tethering appears.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
                 Text("UDP port range (optional 1:1 mapping)", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Leave all four UDP fields empty to reuse the TCP listen/target port.",
@@ -589,7 +652,6 @@ private fun RuleToggle(
             onCheckedChange = onCheckedChange,
         )
         Text(label)
-        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

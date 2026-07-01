@@ -62,23 +62,19 @@ object UsbTetherTargetResolver {
         return null
     }
 
-    fun applyToRule(rule: ProxyRule): Pair<ProxyRule, UsbTetherTarget?> {
-        if (!rule.usbTetherAutoTarget) {
-            return rule to null
+    fun applyToRules(rules: List<ProxyRule>, enabled: Boolean): UsbTetherRuleResolution {
+        if (!enabled) {
+            return UsbTetherRuleResolution(
+                rules = rules,
+                resolvedTarget = null,
+                changed = false,
+                autoRuleCount = 0,
+            )
         }
-        val resolved = resolve() ?: return rule to null
-        return rule.copy(targetIp = resolved.targetIp) to resolved
-    }
-
-    fun applyToRules(rules: List<ProxyRule>): UsbTetherRuleResolution {
         val resolved = resolve()
         var changed = false
-        var autoRuleCount = 0
+        val autoRuleCount = rules.size
         val updatedRules = rules.map { rule ->
-            if (!rule.usbTetherAutoTarget) {
-                return@map rule
-            }
-            autoRuleCount += 1
             if (resolved == null || rule.targetIp == resolved.targetIp) {
                 return@map rule
             }

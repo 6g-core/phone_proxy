@@ -57,15 +57,24 @@ class PhoneProxyService : Service() {
                             }
                             else -> repository.loadRules()
                         }
-                        val resolution = refreshUsbAutoTargets(repository, storedRules)
+                        val globalUsbAutoEnabled = repository.loadGlobalUsbAutoEnabled()
+                        val resolution = refreshUsbAutoTargets(
+                            repository = repository,
+                            storedRules = storedRules,
+                            globalUsbAutoEnabled = globalUsbAutoEnabled,
+                        )
                         val rules = resolution.rules
                         try {
                             engine.start(rules)
                             val enabledRuleCount = rules.count { it.enabled }
-                            ensureUsbAutoMonitor(repository, resolution)
+                            ensureUsbAutoMonitor(repository, resolution, globalUsbAutoEnabled)
                             notifyForeground(
                                 buildNotification(
-                                    buildRunningMessage(enabledRuleCount, resolution)
+                                    buildRunningMessage(
+                                        enabledRuleCount = enabledRuleCount,
+                                        resolution = resolution,
+                                        globalUsbAutoEnabled = globalUsbAutoEnabled,
+                                    )
                                 )
                             )
                         } catch (exc: Exception) {
@@ -194,8 +203,9 @@ class PhoneProxyService : Service() {
     private fun buildRunningMessage(
         enabledRuleCount: Int,
         resolution: UsbTetherRuleResolution,
+        globalUsbAutoEnabled: Boolean,
     ): String {
-        if (resolution.autoRuleCount <= 0) {
+        if (!globalUsbAutoEnabled) {
             return "Running with $enabledRuleCount enabled rule(s)."
         }
         val resolved = resolution.resolvedTarget
@@ -209,8 +219,12 @@ class PhoneProxyService : Service() {
     private fun refreshUsbAutoTargets(
         repository: RuleRepository,
         storedRules: List<com.example.phoneproxy.model.ProxyRule>,
+        globalUsbAutoEnabled: Boolean,
     ): UsbTetherRuleResolution {
-        val resolution = UsbTetherTargetResolver.applyToRules(storedRules)
+        val resolution = UsbTetherTargetResolver.applyToRules(
+            rules = storedRules,
+            enabled = globalUsbAutoEnabled,
+        )
         if (resolution.changed) {
             repository.saveRules(resolution.rules)
         }
@@ -220,9 +234,10 @@ class PhoneProxyService : Service() {
     private fun ensureUsbAutoMonitor(
         repository: RuleRepository,
         initialResolution: UsbTetherRuleResolution,
+        globalUsbAutoEnabled: Boolean,
     ) {
         usbAutoMonitorJob?.cancel()
-        if (initialResolution.autoRuleCount <= 0) {
+        if (!globalUsbAutoEnabled) {
             usbAutoMonitorJob = null
             return
         }
@@ -232,14 +247,28 @@ class PhoneProxyService : Service() {
                 delay(USB_AUTO_REFRESH_INTERVAL_MS)
                 actionMutex.withLock {
                     val storedRules = repository.loadRules()
-                    val resolution = refreshUsbAutoTargets(repository, storedRules)
+                    val currentGlobalUsbAutoEnabled = repository.loadGlobalUsbAutoEnabled()
+                    if (!currentGlobalUsbAutoEnabled) {
+                        usbAutoMonitorJob?.cancel()
+                        usbAutoMonitorJob = null
+                        return@withLock
+                    }
+                    val resolution = refreshUsbAutoTargets(
+                        repository = repository,
+                        storedRules = storedRules,
+                        globalUsbAutoEnabled = currentGlobalUsbAutoEnabled,
+                    )
                     val currentTargetIp = resolution.resolvedTarget?.targetIp
                     if (resolution.changed || currentTargetIp != lastKnownTargetIp) {
                         engine.start(resolution.rules)
                         val enabledRuleCount = resolution.rules.count { it.enabled }
                         notifyForeground(
                             buildNotification(
-                                buildRunningMessage(enabledRuleCount, resolution)
+                                buildRunningMessage(
+                                    enabledRuleCount = enabledRuleCount,
+                                    resolution = resolution,
+                                    globalUsbAutoEnabled = currentGlobalUsbAutoEnabled,
+                                )
                             )
                         )
                     }
